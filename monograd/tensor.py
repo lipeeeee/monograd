@@ -23,7 +23,7 @@ class Context(): # Tensor context
 # TODO: Lazy ops like tinygrad https://docs.tinygrad.org/quickstart/#tensors
 # TODO: mytype everything
 class Tensor():
-    op:Ops.OP
+    op:Ops.OP|None
     data:np.ndarray # for now we save it as ndarray but slow
     parents:Tuple|None
     device:Device
@@ -32,7 +32,7 @@ class Tensor():
     name:str|None
     ctx:Context|None
 
-    def __init__(self, op:Ops.OP, data:List|np.ndarray, parents:Tuple|None = None, requires_grad:bool=False, _dtype=np.float32):
+    def __init__(self, data:List|np.ndarray, op:Ops.OP|None=None, parents:Tuple|None = None, requires_grad:bool=False, _dtype=np.float32):
         self.name:str|None = None
         self.op = op
 
