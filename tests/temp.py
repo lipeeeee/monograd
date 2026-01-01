@@ -25,5 +25,20 @@ def multiplication():
     i = x_tensor * z # scalar
     i = x_tensor * 5 # python int
 
+def topo():
+    x = np.random.rand(5)
+    y = np.random.rand(5)
+
+    x_tensor = tensor.Tensor(x, op=ops.LOADOP)
+    y_tensor = tensor.Tensor(y, op=ops.LOADOP)
+
+    i = x_tensor * y_tensor # same shape
+    i = i + 5
+    i = i * 2
+    i = i + x_tensor
+
+    _ = i.toposort()
+
 addition()
 multiplication()
+topo()

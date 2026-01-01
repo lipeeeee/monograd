@@ -53,6 +53,9 @@ class Tensor():
         self.device = Device.CPU
         self.ctx = None
 
+    def toposort(self):
+        return _toposort(self)
+
     def __add__(self, other):
         if not isinstance(other, Tensor):
             other = Tensor(other)
@@ -65,4 +68,20 @@ class Tensor():
 
     def __repr__(self):
         return f"<Tensor name={self.name} op={self.op} data={self.data} device={self.device}>"
+
+def _toposort(leaf:Tensor): # TODO: make tests
+    # topological sort algo to order DAG
+    visited:set = set()
+    stack:List = []
+
+    def dfs(t:Tensor):
+        visited.add(t)
+        parents = t.parents
+        if parents:
+            for parent in parents:
+                if parent not in visited: dfs(parent)
+        stack.append(t)
+
+    dfs(leaf)
+    return stack[::-1]
 
