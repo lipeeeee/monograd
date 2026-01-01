@@ -1,6 +1,7 @@
 import numpy as np
 from monograd.utils import dbg
 
+
 class OP():
     @staticmethod
     def forward(ctx, *args):
@@ -11,7 +12,7 @@ class OP():
         raise NotImplementedError
 
     @classmethod
-    def __call__(cls, *args):
+    def apply(cls, *args):
         # TODO: Might need to assert / transfer args into Tensor!!!
         from monograd.tensor import Context, Tensor
 
@@ -24,23 +25,25 @@ class OP():
 
         # 3. attatch
         result_tensor.ctx = ctx
-        dbg("saved", result_tensor.ctx.saved_tensors)
-        dbg("op", result_tensor.op)
-        dbg("data", result_tensor.data)
+        # dbg("saved", result_tensor.ctx.saved_data)
+        # dbg("op", result_tensor.op)
+        # dbg("data", result_tensor.data)
         return result_tensor
 
-class ADD():
+class ADD(OP):
     @staticmethod
     def forward(ctx, *args):
-        ctx.saved_tensors()
-        pass
-        return np.add(args)
+        x:np.ndarray = args[0]
+        y:np.ndarray = args[1]
+        return x + y # numpy op
 
     @staticmethod
     def backward(ctx, grad_output):
-        pass
+        # dL/dx = grad_output * 1
+        # dL/dy = grad_output * 1
+        return grad_output, grad_output
 
-class MUL():
+class MUL(OP):
     @staticmethod
     def forward(ctx, *args):
         pass
@@ -52,9 +55,9 @@ class MUL():
 class LOADOP(OP):
     @staticmethod
     def forward(ctx, *args):
-        pass
+        raise TypeError
 
     @staticmethod
     def backward(ctx, grad_output):
-        pass
+        raise TypeError
 
