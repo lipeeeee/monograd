@@ -58,6 +58,11 @@ class Tensor():
             other = Tensor(other)
         return Ops.ADD.apply(self, other)
 
+    def __mul__(self, other):
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        return Ops.MUL.apply(self, other)
+
     def __repr__(self):
         return f"<Tensor name={self.name} op={self.op} data={self.data} device={self.device}>"
 

@@ -1,7 +1,6 @@
 import numpy as np
 from monograd.utils import dbg
 
-
 class OP():
     @staticmethod
     def forward(ctx, *args):
@@ -46,11 +45,15 @@ class ADD(OP):
 class MUL(OP):
     @staticmethod
     def forward(ctx, *args):
-        pass
+        x:np.ndarray = args[0]
+        y:np.ndarray = args[1]
+        ctx.save_for_backward(x, y)
+        return x * y 
 
     @staticmethod
     def backward(ctx, grad_output):
-        pass
+        x, y = ctx.saved_data
+        return grad_output * y, grad_output * x 
 
 class LOADOP(OP):
     @staticmethod
