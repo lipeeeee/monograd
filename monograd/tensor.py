@@ -32,13 +32,14 @@ class Tensor():
     name:str|None
     ctx:Context|None
 
-    def __init__(self, data:List|np.ndarray, op:type|None=None, parents:Tuple|None = None, requires_grad:bool=False, _dtype=np.float32):
+    def __init__(self, data:List|np.ndarray|int|float, op:type|None=None, parents:Tuple|None = None, requires_grad:bool=False, _dtype=np.float32):
         self.name:str|None = None
         self.op = op
         assert not self.op or issubclass(self.op, Ops.OP)
 
         # data & grad
-        if isinstance(data, (List, Tuple, int, float)): self.data = np.array(data, dtype=_dtype)
+        if isinstance(data, (List, Tuple, int, float, np.number)):
+            self.data = np.array(data, dtype=_dtype)
         elif isinstance(data, np.ndarray): self.data = data
         assert isinstance(self.data, np.ndarray)
         self.grad:Tensor|None = None
@@ -49,11 +50,35 @@ class Tensor():
         self.shape = self.data.shape
         self.strides = self.data.strides
         self.offset = 0
+        self._dtype = _dtype
 
         self.device = Device.CPU
         self.ctx = None
 
-    def toposort(self):
+    def backward(self):
+        graph: List[Tensor] = _toposort(self)
+        if not self.grad: 
+            self.grad = Tensor(np.ones(self.shape, dtype=self._dtype), requires_grad=False)
+
+        for node in graph:
+            # check if we can actually call op.backward
+            if not node.op or isinstance(node.op, Ops.LOADOP):
+                continue
+
+            grads = node.op.backward(node.ctx, self.grad)
+            if not isinstance(grads, (tuple, list)): grads = (grads,)
+
+            if not node.parents:
+                continue
+
+            for parent, grad in zip(node.parents, grads):
+                if not parent.requires_grad:
+                    continue
+
+                if not parent.grad: parent.grad = grad
+                else: parent.grad += grad
+        
+    def toposort(self): # REMOVE: used rn for testing 
         return _toposort(self)
 
     def __add__(self, other):
@@ -69,7 +94,7 @@ class Tensor():
     def __repr__(self):
         return f"<Tensor name={self.name} op={self.op} data={self.data} device={self.device}>"
 
-def _toposort(leaf:Tensor): # TODO: make tests
+def _toposort(leaf:Tensor) -> List[Tensor]: # TODO: make tests
     # topological sort algo to order DAG
     visited:set = set()
     stack:List = []

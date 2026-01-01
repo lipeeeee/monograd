@@ -39,6 +39,19 @@ def topo():
 
     _ = i.toposort()
 
+def backward():
+    a = tensor.Tensor(2.0, requires_grad=True)
+    b = tensor.Tensor(3.0, requires_grad=True)
+
+    c = a * b
+    d = c + a
+
+    d.backward()
+    # print(d) # 8
+    # print(a.grad) # 4
+    # print(b.grad) # 2
+
 addition()
 multiplication()
 topo()
+backward()
