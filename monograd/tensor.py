@@ -32,7 +32,7 @@ class Tensor():
     name:str|None
     ctx:Context|None
 
-    def __init__(self, data:List|np.ndarray|int|float, op:type|None=None, parents:Tuple|None = None, requires_grad:bool=False, _dtype=np.float32):
+    def __init__(self, data:List|np.ndarray|int|float, op:type|None=None, parents:Tuple|None = None, requires_grad:bool=True, _dtype=np.float32):
         self.name:str|None = None
         self.op = op
         assert not self.op or issubclass(self.op, Ops.OP)
@@ -92,7 +92,7 @@ class Tensor():
         return Ops.MUL.apply(self, other)
 
     def __repr__(self):
-        return f"<Tensor name={self.name} op={self.op} data={self.data} device={self.device}>"
+        return f"<Tensor name={self.name} op={self.op} data={self.data} device={self.device} requires_grad={self.requires_grad}>"
 
 def _toposort(leaf:Tensor) -> List[Tensor]: # TODO: make tests
     # topological sort algo to order DAG
