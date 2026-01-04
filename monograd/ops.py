@@ -64,3 +64,20 @@ class LOADOP(OP):
     def backward(ctx, grad_output):
         raise TypeError
 
+class MATMUL(OP):
+    @staticmethod
+    def forward(ctx, *args):
+        x:np.ndarray = args[0]
+        y:np.ndarray = args[1]
+        ctx.save_for_backward(x, y)
+
+        return np.matmul(x, y)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        x,y = ctx.saved_data
+
+        grad_x = np.matmul(grad_output.data, y.T)
+        grad_y = np.matmul(x.T, grad_output.data)
+
+        return grad_x, grad_y

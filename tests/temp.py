@@ -51,7 +51,23 @@ def backward():
     # print(a.grad) # 4
     # print(b.grad) # 2
 
+
+def matmultiplication():
+    x = [[1, 2, 3],[4, 5, 6]]
+    y = [[1,2], [3,4], [5,6]]
+    z = np.random.rand(1)
+
+    x_tensor = tensor.Tensor(x, op=ops.LOADOP)
+    y_tensor = tensor.Tensor(y, op=ops.LOADOP)
+
+    i = ops.MATMUL.apply(x_tensor, y_tensor) # same shape
+
+    print(i)
+    i.backward()
+    print(i)
+
 addition()
 multiplication()
 topo()
 backward()
+matmultiplication()
