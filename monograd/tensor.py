@@ -65,7 +65,7 @@ class Tensor():
             if not node.op or isinstance(node.op, Ops.LOADOP):
                 continue
 
-            grads = node.op.backward(node.ctx, self.grad)
+            grads = node.op.backward(node.ctx, node.grad)
             if not isinstance(grads, (tuple, list)): grads = (grads,)
 
             if not node.parents:

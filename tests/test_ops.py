@@ -47,8 +47,8 @@ class Test_Ops(Tester):
         a = Tensor(3.0, requires_grad=True)
         b = a + a
         b.backward()
-        assert isinstance(b.grad, Tensor), f"Gradient type expected to be Tensor, got {type(a.grad)}"
-        assert b.grad.data == 2.0, f"ADD backward error: expected 2.0, got {b.grad.data}"
+        assert isinstance(a.grad, Tensor), f"Gradient type expected to be Tensor, got {type(a.grad)}"
+        assert a.grad.data == 2.0, f"ADD backward error: expected 2.0, got {a.grad.data}"
 
     def test_mul_forward(self):
         a = Tensor(1, requires_grad=True)
@@ -85,7 +85,7 @@ class Test_Ops(Tester):
         b = a * a
         b.backward()
         # dy/dx = 2x = 6.0
-        assert isinstance(b.grad, Tensor), f"Gradient type expected to be Tensor, got {type(a.grad)}"
-        assert b.grad.data == 6.0, f"MUL backward error: expected 6.0, got {b.grad.data}"
+        assert isinstance(a.grad, Tensor), f"Gradient type expected to be Tensor, got {type(a.grad)}"
+        assert a.grad.data == 6.0, f"MUL backward error: expected 6.0, got {a.grad.data}"
 
 Test_Ops().test_all()
