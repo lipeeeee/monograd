@@ -96,14 +96,14 @@ class MATMUL(OP):
 class RELU(OP):
     @staticmethod
     def forward(ctx, *args):
-        x:list = args[0]
+        x:np.ndarray = args[0]
         ctx.save_for_backward(x)
         return np.maximum(x, 0)
 
     @staticmethod
     def backward(ctx, grad_output):
         from monograd.tensor import Tensor
-        x = ctx.saved_data
+        x, = ctx.saved_data
         a = grad_output.data * (x > 0)
         return Tensor(a)
 

@@ -100,6 +100,19 @@ class Tensor():
     def toposort(self): # REMOVE: used rn for testing 
         return _toposort(self)
 
+    def __neg__(self):
+        return self * -1
+
+    def __sub__(self, other):
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        return self + (-other)
+    
+    def __rsub__(self, other):
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        return other + (-self)
+
     def __add__(self, other):
         if not isinstance(other, Tensor):
             other = Tensor(other)
