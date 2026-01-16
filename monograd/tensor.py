@@ -103,11 +103,6 @@ class Tensor():
     def __neg__(self):
         return self * -1
 
-    def __sub__(self, other):
-        if not isinstance(other, Tensor):
-            other = Tensor(other)
-        return self + (-other)
-    
     def __rsub__(self, other):
         if not isinstance(other, Tensor):
             other = Tensor(other)
@@ -117,6 +112,11 @@ class Tensor():
         if not isinstance(other, Tensor):
             other = Tensor(other)
         return Ops.ADD.apply(self, other)
+
+    def __sub__(self, other):
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        return Ops.SUB.apply(self, other)
 
     def __mul__(self, other):
         if not isinstance(other, Tensor):

@@ -1,6 +1,17 @@
 import numpy as np
 from monograd.utils import dbg
 
+def unbroadcast(grad:np.ndarray, original_shape:tuple) -> np.ndarray:
+    # Collapse leading dimensions (e.g. (32, 10) -> (10,))
+    while grad.ndim > len(original_shape):
+        grad = np.sum(grad, axis=0)
+
+    # Collapse broadcasted dimensions (e.g. (4, 4) -> (4, 1) -> (4,))
+    for i, dim in enumerate(original_shape):
+        if dim == 1:
+            grad = np.sum(grad, axis=i, keepdims=True)
+    return grad
+
 class OP():
     @staticmethod
     def forward(ctx, *args):
@@ -36,13 +47,46 @@ class ADD(OP):
     def forward(ctx, *args):
         x:np.ndarray = args[0]
         y:np.ndarray = args[1]
+        ctx.save_for_backward(x.shape, y.shape)
         return x + y # numpy op
 
     @staticmethod
     def backward(ctx, grad_output):
-        # dL/dx = grad_output * 1
-        # dL/dy = grad_output * 1
-        return grad_output, grad_output
+        from monograd.tensor import Tensor
+        x_shape, y_shape = ctx.saved_data
+        grad_x = grad_output
+        grad_y = grad_output
+
+        # unbroadcast nparrays
+        if x_shape != grad_x.shape:
+            grad_x = Tensor(unbroadcast(grad_x.data, x_shape), requires_grad=False)
+        if y_shape != grad_y.shape:
+            grad_y = Tensor(unbroadcast(grad_y.data, y_shape), requires_grad=False)
+
+        return grad_x, grad_y 
+
+class SUB(OP):
+    @staticmethod
+    def forward(ctx, *args):
+        x:np.ndarray = args[0]
+        y:np.ndarray = args[1]
+        ctx.save_for_backward(x.shape, y.shape)
+        return x - y # numpy op
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        x_shape, y_shape = ctx.saved_data
+        grad_x = grad_output
+        grad_y = -grad_output
+
+        # unbroadcast nparrays
+        if x_shape != grad_x.shape:
+            grad_x = Tensor(unbroadcast(grad_x.data, x_shape), requires_grad=False)
+        if y_shape != grad_y.shape:
+            grad_y = Tensor(unbroadcast(grad_y.data, y_shape), requires_grad=False)
+
+        return grad_x, grad_y 
 
 class MUL(OP):
     @staticmethod
@@ -54,8 +98,18 @@ class MUL(OP):
 
     @staticmethod
     def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
         x, y = ctx.saved_data
-        return grad_output * y, grad_output * x 
+        grad_x = grad_output * y
+        grad_y = grad_output * x
+
+        # unbroadcast nparrays
+        if x.shape != grad_x.shape:
+            grad_x = Tensor(unbroadcast(grad_x.data, x.shape), requires_grad=False)
+        if y.shape != grad_y.shape:
+            grad_y = Tensor(unbroadcast(grad_y.data, y.shape), requires_grad=False)
+
+        return grad_x, grad_y 
 
 class TRANSPOSE(OP):
     @staticmethod
