@@ -79,6 +79,12 @@ class Tensor():
                 if not parent.grad: parent.grad = grad
                 else: parent.grad += grad
 
+    def relu(self):
+        return Ops.RELU.apply(self)
+
+    def sum(self, axis=None):
+        return Ops.SUM.apply(self, axis)
+
     def matmul(self, other):
         if not isinstance(other, Tensor):
             other = Tensor(other)

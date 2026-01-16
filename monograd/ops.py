@@ -93,6 +93,34 @@ class MATMUL(OP):
         
         return grad_x, grad_y
 
+class RELU(OP):
+    @staticmethod
+    def forward(ctx, *args):
+        x:list = args[0]
+        ctx.save_for_backward(x)
+        return np.maximum(x, 0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        x = ctx.saved_data
+        a = grad_output.data * (x > 0)
+        return Tensor(a)
+
+class SUM(OP):
+    @staticmethod
+    def forward(ctx, *args):
+        x:np.ndarray = args[0]
+        axis:int|None = args[1]
+        ctx.save_for_backward(x.shape)
+        return np.sum(x, axis=axis)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        shape, = ctx.saved_data
+        return Tensor(np.ones(shape) * grad_output.data)
+
 class LOADOP(OP):
     @staticmethod
     def forward(ctx, *args):

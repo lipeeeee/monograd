@@ -18,6 +18,11 @@ class Test_Ops(Tester):
         super().test_fn(self.test_transpose_forward)
         super().test_fn(self.test_transpose_backward)
 
+        super().test_fn(self.test_relu_forward)
+        super().test_fn(self.test_relu_backward)
+        super().test_fn(self.test_sum_forward)
+        super().test_fn(self.test_sum_backward)
+
     def test_add_forward(self):
         a = Tensor(1)
         b = a + 1
@@ -144,5 +149,57 @@ class Test_Ops(Tester):
         assert a.grad, f"TRANSPOSE backward was not calculated for A"
         assert a.grad.shape == (2, 2)
         assert np.all(a.grad.data == 1.0)
+
+    def test_relu_forward(self):
+        a = Tensor([-1.0, 0.0, 1.0])
+        b = a.relu()
+        assert isinstance(b, Tensor), f"RELU didn't return a Tensor obj"
+        assert np.array_equal(b.data, [0.0, 0.0, 1.0]), f"RELU forward error: got {b.data}"
+
+        a = Tensor([-5.0, -2.0])
+        b = a.relu()
+        assert isinstance(b, Tensor), f"RELU didn't return a Tensor obj"
+        assert np.array_equal(b.data, [0.0, 0.0]), f"RELU forward error: got {b.data}"
+
+    def test_relu_backward(self):
+        a = Tensor([-1.0, 2.0], requires_grad=True)
+        b = a.relu()
+        assert isinstance(b, Tensor), f"RELU didn't return a Tensor obj"
+        b.backward()
+        assert isinstance(a.grad, Tensor), f"RELU backward error: didn't compute gradient of *a*"
+        assert np.array_equal(a.grad.data, [0.0, 1.0]), f"RELU backward error: got {a.grad.data}"
+
+    def test_sum_forward(self):
+        a = Tensor([1.0, 2.0, 3.0])
+        b = a.sum()
+        assert isinstance(b, Tensor)
+        assert b.data == 6.0, f"SUM forward error: got {b.data}"
+
+        a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+        b = a.sum(axis=0)
+        assert np.array_equal(b.data, [4.0, 6.0]), f"SUM axis=0 error: got {b.data}"
+
+        c = a.sum(axis=1)
+        assert np.array_equal(c.data, [3.0, 7.0]), f"SUM axis=1 error: got {c.data}"
+
+    def test_sum_backward(self):
+        # Simple backward sum
+        a = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+        b = a.sum()
+        b.backward()
+        assert isinstance(a.grad, Tensor), f"SUM backward error: didn't compute gradient of *a*"
+        assert np.array_equal(a.grad.data, [1.0, 1.0, 1.0]), f"SUM backward error: got {a.grad.data}"
+
+        # broadcasting logic
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        y = x.sum(axis=0)
+
+        z = y * Tensor([2.0, 3.0])
+        z = z.sum()
+        z.backward()
+
+        expected = [[2.0, 3.0], [2.0, 3.0]]
+        assert isinstance(x.grad, Tensor), f"SUM backward error: didn't compute gradient of *x*"
+        assert np.array_equal(x.grad.data, expected), f"SUM axis backward error:\n{x.grad.data}"
 
 Test_Ops().test_all()
