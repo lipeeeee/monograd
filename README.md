@@ -8,6 +8,7 @@ PYTHONPATH=. DEBUG=TRUE
 code notes
 ```
 MEMIMPROVEMENT: note about possible memory improvement
+PERFIMPROVEMENT: note about possible performance improvement
 REMOVE: remove ltr
 ```
 

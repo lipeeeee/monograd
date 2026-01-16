@@ -41,6 +41,7 @@ class Tensor():
         if isinstance(data, (List, Tuple, int, float, np.number)):
             self.data = np.array(data, dtype=_dtype)
         elif isinstance(data, np.ndarray): self.data = data
+        elif isinstance(data, Tensor): dbg(f"[TENSOR] Got type {type(data)} as *data* in Tensor")
         assert isinstance(self.data, np.ndarray)
         self.grad:Tensor|None = None
         self.requires_grad = requires_grad
@@ -77,7 +78,19 @@ class Tensor():
 
                 if not parent.grad: parent.grad = grad
                 else: parent.grad += grad
-        
+
+    def matmul(self, other):
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        return Ops.MATMUL.apply(self, other)
+
+    def transpose(self, order=None):
+        return Ops.TRANSPOSE.apply(self, order)
+
+    @property
+    def T(self):
+        return self.transpose()
+      
     def toposort(self): # REMOVE: used rn for testing 
         return _toposort(self)
 
@@ -90,6 +103,9 @@ class Tensor():
         if not isinstance(other, Tensor):
             other = Tensor(other)
         return Ops.MUL.apply(self, other)
+    
+    def __matmul__(self, other):
+        return self.matmul(other)
 
     def __repr__(self):
         return f"<Tensor name={self.name} op={self.op} data={self.data} device={self.device} requires_grad={self.requires_grad}>"
