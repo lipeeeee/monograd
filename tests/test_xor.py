@@ -1,37 +1,64 @@
-import numpy as np
-from monograd.tensor import Tensor
+from monograd.nn import Linear, Module
+from monograd.optimizer import SGD
+from monograd.tensor import Tensor 
 
-# 1. Data
-x = Tensor([[0, 0], [0, 1], [1, 0], [1, 1]], requires_grad=False) # XOR input
-y = Tensor([[0], [1], [1], [0]], requires_grad=False)             # XOR target
+class XORNet(Module):
+    def __init__(self):
+        # XOR is not linearly separable, so we need hidden dimensions.
+        # Input: 2 (x, y) -> Hidden: 4 neurons -> Output: 1 (score)
+        self.fc1 = Linear(2, 4)
+        self.fc2 = Linear(4, 1)
 
-# 2. Weights (Random init)
-w1 = Tensor(np.random.randn(2, 4), requires_grad=True)
-b1 = Tensor(np.zeros((4,)), requires_grad=True)
-w2 = Tensor(np.random.randn(4, 1), requires_grad=True)
-b2 = Tensor(np.zeros((1,)), requires_grad=True)
+    def forward(self, x):
+        # x -> Linear -> ReLU -> Linear -> Output
+        x = self.fc1(x).relu()
+        x = self.fc2(x)
+        return x
 
-# 3. Training Loop
-for i in range(10):
-    # Forward
-    layer1 = (x @ w1 + b1).relu()
-    pred = layer1 @ w2 + b2
+# --- 2. Create Dataset (XOR) ---
+# Input: (4 samples, 2 features)
+x_train = Tensor([[0.0, 0.0], 
+                  [0.0, 1.0], 
+                  [1.0, 0.0], 
+                  [1.0, 1.0]], requires_grad=False)
+
+# Target: (4 samples, 1 label)
+# 0^0=0, 0^1=1, 1^0=1, 1^1=0
+y_train = Tensor([[0.0], 
+                  [1.0], 
+                  [1.0], 
+                  [0.0]], requires_grad=False)
+
+# --- 3. Initialize Model & Optimizer ---
+model = XORNet()
+# We use a high Learning Rate (0.1) because XOR is simple but has sharp gradients
+optim = SGD(model.parameters(), lr=0.1)
+
+print("--- Starting Training ---")
+
+# --- 4. Training Loop ---
+for epoch in range(500):
     
-    # Loss (MSE)
-    diff = pred - y
+    # A. Forward Pass
+    pred = model(x_train)
+    
+    # B. Loss Calculation (MSE: Mean Squared Error)
+    # We use (pred - y) * (pred - y) since we haven't built Pow() yet
+    diff = pred - y_train
     loss = (diff * diff).sum()
     
-    # Backward
-    loss.backward()
+    # C. Backward Pass
+    optim.zero_grad()
+    loss.backward()  
+    optim.step()     
     
-    # Update (SGD)
-    # Note: We must wrap this in "no_grad" typically, but for now just subtract data
-    w1.data -= 0.01 * w1.grad.data
-    b1.data -= 0.01 * b1.grad.data
-    w2.data -= 0.01 * w2.grad.data
-    b2.data -= 0.01 * b2.grad.data
-    
-    # Zero Grads (Reset buckets!)
-    w1.grad, b1.grad, w2.grad, b2.grad = None, None, None, None
-    
-    print(f"Step {i}, Loss: {loss.data}")
+    if epoch % 50 == 0:
+        print(f"Epoch {epoch} | Loss: {loss.data:.4f}")
+
+print("\n--- Final Predictions ---")
+final_pred = model(x_train)
+for i in range(4):
+    input_vals = x_train.data[i]
+    prediction = final_pred.data[i][0]
+    target = y_train.data[i][0]
+    print(f"Input: {input_vals} | Target: {target} | Prediction: {prediction:.4f}")

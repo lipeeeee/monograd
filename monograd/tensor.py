@@ -1,10 +1,3 @@
-
-#.data   A flat array (Buffer)   The physical numbers for the forward pass.
-#.grad   A flat array (Buffer)   The physical numbers for the backward pass.
-#.metadata   Shape, Strides, Offset  The "glasses" that tell you how to read both buffers.
-#.op Add, Mul, Conv, etc.    Remembers how this tensor was created.
-#.parents    List of Tensors Tells the Autograd where to send the gradients next.
-
 from typing import List, Tuple
 from monograd.utils import dbg, Device
 import monograd.ops as Ops
@@ -19,9 +12,6 @@ class Context(): # Tensor context
     def save_for_backward(self, *args): # MEMIMPROVEMENT: only save x.data when x is Tensor :: its runtime 4 memory payoff
         self.saved_data.extend(args)
 
-# TODO: for tensor, impl magic methods for things like (1 + tensor)
-# TODO: Lazy ops like tinygrad https://docs.tinygrad.org/quickstart/#tensors
-# TODO: mytype everything
 class Tensor():
     op:type|None
     data:np.ndarray # for now we save it as ndarray but slow
@@ -32,8 +22,8 @@ class Tensor():
     name:str|None
     ctx:Context|None
 
-    def __init__(self, data:List|np.ndarray|int|float, op:type|None=None, parents:Tuple|None = None, requires_grad:bool=True, _dtype=np.float32):
-        self.name:str|None = None
+    def __init__(self, data:List|np.ndarray|int|float, op:type|None=None, parents:Tuple|None = None, requires_grad:bool=True, _dtype=np.float32, name=None):
+        self.name:str|None = name 
         self.op = op
         assert not self.op or issubclass(self.op, Ops.OP)
 
@@ -81,6 +71,9 @@ class Tensor():
 
     def relu(self):
         return Ops.RELU.apply(self)
+
+    def leaky_relu(self, slope=0.01):
+        return Ops.LEAKYRELU.apply(self, slope)
 
     def sum(self, axis=None):
         return Ops.SUM.apply(self, axis)

@@ -37,9 +37,6 @@ class OP():
 
         # 3. attatch
         result_tensor.ctx = ctx
-        # dbg("saved", result_tensor.ctx.saved_data)
-        # dbg("op", result_tensor.op)
-        # dbg("data", result_tensor.data)
         return result_tensor
 
 class ADD(OP):
@@ -94,7 +91,7 @@ class MUL(OP):
         x:np.ndarray = args[0]
         y:np.ndarray = args[1]
         ctx.save_for_backward(x, y)
-        return x * y 
+        return x * y  # numpy op
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -130,7 +127,7 @@ class MATMUL(OP):
         x:np.ndarray = args[0]
         y:np.ndarray = args[1]
         ctx.save_for_backward(x, y)
-        return x @ y
+        return x @ y # numpy matmul
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -160,6 +157,22 @@ class RELU(OP):
         x, = ctx.saved_data
         a = grad_output.data * (x > 0)
         return Tensor(a)
+
+class LEAKYRELU(OP):
+    @staticmethod
+    def forward(ctx, *args):
+        x:np.ndarray = args[0]
+        slope:float = args[1]
+        ctx.save_for_backward(x, slope)
+        return np.maximum(x, x * slope)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        x, slope = ctx.saved_data
+        grad = grad_output.data.copy()
+        grad[x <= 0] *= slope
+        return Tensor(grad)
 
 class SUM(OP):
     @staticmethod
