@@ -61,7 +61,7 @@ print(f"Data Loaded: {x_train.shape}")
 
 # Initialize
 model = MNISTNet()
-optim = SGD(model.parameters(), lr=0.01)
+optim = SGD(model.parameters(), lr=0.01, momentum=0.9)
 
 BATCH_SIZE = 64
 STEPS = 10000
