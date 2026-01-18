@@ -13,6 +13,9 @@ REMOVE: remove ltr
 ```
 
 todo
-- MATMUL op
-- optimizer
-- actual tests
+- Tests
+- Check for refactoring optimizations
+- Adam optimizer
+- Save/Load weigths & bias 
+- HIP/CUDA kernels (requires huge refactoring)
+- Conv2d; MaxPool2d layers
