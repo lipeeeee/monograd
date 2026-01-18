@@ -86,6 +86,15 @@ class Tensor():
     def transpose(self, order=None):
         return Ops.TRANSPOSE.apply(self, order)
 
+    def reshape(self, shape):
+        return Ops.RESHAPE.apply(self, shape)
+
+    def exp(self):
+        return Ops.EXP.apply(self)
+
+    def log(self):
+        return Ops.LOG.apply(self)
+
     @property
     def T(self):
         return self.transpose()

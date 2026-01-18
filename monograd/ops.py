@@ -1,3 +1,4 @@
+from typing import Any
 import numpy as np
 from monograd.utils import dbg
 
@@ -62,7 +63,7 @@ class ADD(OP):
 
         return grad_x, grad_y 
 
-class SUB(OP):
+class SUB(OP): # TODO: test
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -144,7 +145,7 @@ class MATMUL(OP):
         
         return grad_x, grad_y
 
-class RELU(OP):
+class RELU(OP): # TODO: test
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -158,7 +159,7 @@ class RELU(OP):
         a = grad_output.data * (x > 0)
         return Tensor(a)
 
-class LEAKYRELU(OP):
+class LEAKYRELU(OP): # TODO: test
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -187,6 +188,47 @@ class SUM(OP):
         from monograd.tensor import Tensor
         shape, = ctx.saved_data
         return Tensor(np.ones(shape) * grad_output.data)
+
+class RESHAPE(OP): # TODO: test
+    @staticmethod
+    def forward(ctx, *args):
+        x:np.ndarray = args[0]
+        shape:tuple = args[1]
+        ctx.save_for_backward(x.shape)
+        return x.reshape(shape)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        original_shape, = ctx.saved_data
+        return Tensor(grad_output.data.reshape(original_shape), requires_grad=False)
+
+class EXP(OP): # TODO: test 
+    @staticmethod
+    def forward(ctx, *args):
+        x:np.ndarray = args[0]
+        result = np.exp(x)
+        ctx.save_for_backward(result)
+        return result
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        result, = ctx.saved_data
+        return Tensor(grad_output.data * result, requires_grad=False)
+
+class LOG(OP): # TODO: test 
+    @staticmethod
+    def forward(ctx, *args):
+        x:np.ndarray = args[0]
+        ctx.save_for_backward(x)
+        return np.log(x) 
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        x, = ctx.saved_data
+        return Tensor(grad_output.data / x, requires_grad=False)
 
 class LOADOP(OP):
     @staticmethod
