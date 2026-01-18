@@ -180,14 +180,19 @@ class SUM(OP):
     def forward(ctx, *args):
         x:np.ndarray = args[0]
         axis:int|None = args[1]
-        ctx.save_for_backward(x.shape)
+        ctx.save_for_backward(x.shape, axis)
         return np.sum(x, axis=axis)
 
     @staticmethod
     def backward(ctx, grad_output):
         from monograd.tensor import Tensor
-        shape, = ctx.saved_data
-        return Tensor(np.ones(shape) * grad_output.data)
+        shape, axis = ctx.saved_data
+
+        grad = grad_output.data
+        if axis is not None:
+            grad = np.expand_dims(grad, axis)
+
+        return Tensor(np.ones(shape) * grad)
 
 class RESHAPE(OP): # TODO: test
     @staticmethod
