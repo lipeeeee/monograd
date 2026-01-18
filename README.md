@@ -43,7 +43,7 @@ optim = SGD(model.parameters(), lr=0.01)
 ```py
 from monograd.tensor import Tensor
 
-y = torch.tensor([[2.0,0,-2.0]], requires_grad=True)
+y = Tensor([[2.0,0,-2.0]], requires_grad=True)
 z = y.matmul(x).sum()
 z.backward()
 
