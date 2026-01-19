@@ -120,7 +120,10 @@ class TRANSPOSE(OP):
     @staticmethod
     def backward(ctx, grad_output):
         order, = ctx.saved_data
-        return grad_output.transpose(order)
+        if order is None:
+            return grad_output.transpose()
+        else:
+            return grad_output.transpose(np.argsort(order))
 
 class MATMUL(OP):
     @staticmethod
