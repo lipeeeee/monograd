@@ -66,6 +66,7 @@ print(y.grad.tolist())  # dz/dy
 
 ### Roadmap
 - [ ] Conv2d (CPU)
+- [ ] general refactoring with tinygrad-like file struct(nn, datasets) 
 - [ ] GPU Support (CUDA/HIP)
 - [ ] GPU kernel code gen (JIT)
 

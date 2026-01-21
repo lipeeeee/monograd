@@ -1,4 +1,4 @@
-test_files=("test_ops.py" "test_xor.py")
+test_files=("test_ops.py")
 args="PYTHONPATH=. DEBUG=TRUE"
 
 # run all

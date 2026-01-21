@@ -1,8 +1,6 @@
 import numpy as np
-from lib.mnist_loader import fetch_mnist
 from monograd.tensor import Tensor
-from monograd.nn import Module, Linear
-from monograd.optimizer import SGD
+from monograd.nn import Module, Linear, optim, datasets
 
 # --- Loss fn() ---
 def cross_entropy_loss(logits, targets):
@@ -56,12 +54,12 @@ class MNISTNet(Module):
 
 # --- Training ---
 print("Loading Data...")
-x_train, y_train, x_test, y_test = fetch_mnist()
+x_train, y_train, x_test, y_test = datasets.mnist()
 print(f"Data Loaded: {x_train.shape}")
 
 # Initialize
 model = MNISTNet()
-optim = SGD(model.parameters(), lr=0.01, momentum=0.9)
+optim = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
 
 BATCH_SIZE = 64
 STEPS = 10000

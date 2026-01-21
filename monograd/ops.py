@@ -63,7 +63,7 @@ class ADD(OP):
 
         return grad_x, grad_y 
 
-class SUB(OP): # TODO: test
+class SUB(OP):
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -148,7 +148,7 @@ class MATMUL(OP):
         
         return grad_x, grad_y
 
-class RELU(OP): # TODO: test
+class RELU(OP):
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -162,7 +162,7 @@ class RELU(OP): # TODO: test
         a = grad_output.data * (x > 0)
         return Tensor(a)
 
-class LEAKYRELU(OP): # TODO: test
+class LEAKYRELU(OP):
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -197,7 +197,7 @@ class SUM(OP):
 
         return Tensor(np.ones(shape) * grad)
 
-class RESHAPE(OP): # TODO: test
+class RESHAPE(OP):
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -211,7 +211,7 @@ class RESHAPE(OP): # TODO: test
         original_shape, = ctx.saved_data
         return Tensor(grad_output.data.reshape(original_shape), requires_grad=False)
 
-class EXP(OP): # TODO: test 
+class EXP(OP):
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]
@@ -225,7 +225,7 @@ class EXP(OP): # TODO: test
         result, = ctx.saved_data
         return Tensor(grad_output.data * result, requires_grad=False)
 
-class LOG(OP): # TODO: test 
+class LOG(OP):
     @staticmethod
     def forward(ctx, *args):
         x:np.ndarray = args[0]

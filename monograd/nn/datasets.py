@@ -3,7 +3,7 @@ import os
 import gzip
 import urllib.request
 
-def fetch_mnist():
+def mnist():
     url_base = "https://storage.googleapis.com/cvdf-datasets/mnist/"
     file_names = {
         "x_train": "train-images-idx3-ubyte.gz",
@@ -22,7 +22,6 @@ def fetch_mnist():
             urllib.request.urlretrieve(url_base + filename, filepath)
             
         with gzip.open(filepath, 'rb') as f:
-            # --- FIX IS HERE: Check 'filename', not 'key' ---
             if "images" in filename:
                 # Skip 16-byte header
                 arr = np.frombuffer(f.read(), np.uint8, offset=16)
@@ -33,7 +32,7 @@ def fetch_mnist():
                 
     return data["x_train"], data["y_train"], data["x_test"], data["y_test"]
 
-if __name__ == "__main__":
-    xt, yt, xv, yv = fetch_mnist()
-    print(f"X Train: {xt.shape}")  # Should be (60000, 28, 28)
-    print(f"Y Train: {yt.shape}")  # Should be (60000,)
+# if __name__ == "__main__":
+#     xt, yt, xv, yv = mnist()
+#     print(f"X Train: {xt.shape}")  # Should be (60000, 28, 28)
+#     print(f"Y Train: {yt.shape}")  # Should be (60000,)
