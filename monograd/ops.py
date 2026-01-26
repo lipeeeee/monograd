@@ -1,6 +1,6 @@
 from typing import Any
 import numpy as np
-from monograd.utils import dbg
+from monograd.utils import dbg, im2col_indices, col2im_indices
 
 def unbroadcast(grad:np.ndarray, original_shape:tuple) -> np.ndarray:
     # Collapse leading dimensions (e.g. (32, 10) -> (10,))
@@ -237,6 +237,129 @@ class LOG(OP):
         from monograd.tensor import Tensor
         x, = ctx.saved_data
         return Tensor(grad_output.data / x, requires_grad=False)
+
+class CONV2D(OP):
+    @staticmethod
+    def forward(ctx, *args):
+        """
+        x: (N, C_in, H, W)
+        w: (C_out, C_in, KH, KW)
+        """
+        x = args[0]
+        w = args[1]
+        stride = args[2]
+        padding = args[3]
+
+        N, C, H, W = x.shape
+        F, C, HH, WW = w.shape # F = Filters (C_out)
+        
+        # 1. Math for output dimensions
+        H_out = (H + 2 * padding - HH) // stride + 1
+        W_out = (W + 2 * padding - WW) // stride + 1
+        
+        # 2. Im2Col (Turn image into a matrix)
+        # Shape: (C_in * KH * KW, N * H_out * W_out)
+        cols = im2col_indices(x, HH, WW, padding, stride)
+        
+        # 3. Flatten Weights
+        # Shape: (F, C_in * KH * KW)
+        w_col = w.reshape(F, -1)
+        
+        # 4. Matrix Multiplication (The actual convolution)
+        # Shape: (F, N * H_out * W_out)
+        out = w_col @ cols
+        
+        # 5. Reshape back to (N, F, H_out, W_out)
+        out = out.reshape(F, H_out, W_out, N)
+        out = out.transpose(3, 0, 1, 2)
+        
+        ctx.save_for_backward(x, cols, w, stride, padding)
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        x, cols, w, stride, padding = ctx.saved_data
+        
+        N, C, H, W = x.shape
+        F, _, HH, WW = w.shape
+        
+        # Reshape Gradient for Matrix Mult
+        # (N, F, H_out, W_out) -> (F, N * H_out * W_out)
+        grad_reshaped = grad_output.data.transpose(1, 2, 3, 0).reshape(F, -1)
+        
+        # Compute Weight Gradient
+        # dW = grad * cols.T
+        grad_w_col = grad_reshaped @ cols.T
+        grad_w = grad_w_col.reshape(w.shape)
+        
+        # Compute Input Gradient (This needs Col2Im)
+        # dX = W.T * grad
+        w_reshape = w.reshape(F, -1)
+        grad_cols = w_reshape.T @ grad_reshaped
+        
+        # Turn columns back into image
+        grad_x = col2im_indices(grad_cols, x.shape, HH, WW, padding, stride)
+        
+        return Tensor(grad_x), Tensor(grad_w)
+
+class MAXPOOL2D(OP):
+    @staticmethod
+    def forward(ctx, *args):
+        x = args[0]
+        kernel_size = args[1]
+        stride = args[2]
+        padding = args[3]
+
+        # Default stride to kernel_size (standard for pooling)
+        if stride is None: stride = kernel_size
+            
+        N, C, H, W = x.shape
+        H_out = (H + 2 * padding - kernel_size) // stride + 1
+        W_out = (W + 2 * padding - kernel_size) // stride + 1
+
+        # shape: (C * kernel_size * kernel_size, N * H_out * W_out)
+        cols = im2col_indices(x, kernel_size, kernel_size, padding, stride)
+        
+        # New shape: (kernel_size * kernel_size, C, N * H_out * W_out)
+        cols_reshaped = cols.reshape(C, kernel_size * kernel_size, -1)
+        
+        out = np.max(cols_reshaped, axis=1)
+        
+        # Argmax gives the index of the max value (0 to k*k-1)
+        argmax = np.argmax(cols_reshaped, axis=1)
+        
+        # Reshape Output
+        out = out.reshape(C, H_out, W_out, N)
+        out = out.transpose(3, 0, 1, 2)
+
+        ctx.save_for_backward(x.shape, argmax, kernel_size, stride, padding)
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        from monograd.tensor import Tensor
+        x_shape, argmax, kernel_size, stride, padding = ctx.saved_data
+        N, C, H, W = x_shape
+        
+        # Flatten gradient to match the column shape
+        grad = grad_output.data.transpose(1, 2, 3, 0).reshape(C, -1)
+        
+        # Create a zero matrix for the columns
+        cols_grad = np.zeros((C, kernel_size * kernel_size, grad.shape[1]))
+        
+        # Route the gradient ONLY to the max indices
+        rows = np.arange(C)[:, None]
+        cols_indices = np.arange(grad.shape[1])[None, :]
+        cols_grad[rows, argmax, cols_indices] = grad
+        
+        # Flatten back to im2col shape
+        cols_grad = cols_grad.reshape(C * kernel_size * kernel_size, -1)
+        
+        # Col2Im
+        grad_x = col2im_indices(cols_grad, x_shape, kernel_size, kernel_size, padding, stride)
+        
+        return Tensor(grad_x)
 
 class LOADOP(OP):
     @staticmethod

@@ -19,8 +19,7 @@ It is a lightweight, define-by-run deep learning framework built from scratch. D
 ### Making a simple neural net in monograd:
 ```py
 from monograd.tensor import Tensor
-from monograd.nn import Module, Linear
-from monograd.optimizer import SGD
+from monograd.nn import Module, Linear, optim
 
 class MyNet(Module):
     def __init__(self):
@@ -33,7 +32,7 @@ class MyNet(Module):
         return x
 
 model = MyNet()
-optim = SGD(model.parameters(), lr=0.01)
+optim = optim.SGD(model.parameters(), lr=0.01)
 # Training is the same as pytorch
 ```
 
@@ -64,11 +63,37 @@ print(y.grad.tolist())  # dz/dy
 
 ---
 
+Turns out you can build 95% of real world networks with **monograd**'s available framework
+
+### Available Optimizers
+- SGD(Stochastic Gradient Descent) with momentum
+- Adam(Adaptive Momet Estimation)
+
+### Available Network Layers
+- Linear
+- Conv2D
+- MaxPool2D
+
+### Available OPs 
+- ADD
+- SUM
+- SUB
+- MUL
+- Transpose
+- ReLu
+- LeakyReLu
+- Reshape
+- LOG
+- EXP
+
+---
+
 ### Roadmap
-- [ ] Conv2d (CPU)
-- [ ] general refactoring with tinygrad-like file struct(nn, datasets) 
-- [ ] GPU Support (CUDA/HIP)
-- [ ] GPU kernel code gen (JIT)
+- [ x ] Conv2d (CPU)
+- [ x ] MaxPool2D (CPU)
+- [ x ] general refactoring with tinygrad-like file struct(nn, datasets) 
+- [ ] ~~GPU Support (CUDA/HIP)~~
+- [ ] ~~GPU kernel code gen (JIT)~~
 
 ### Running tests
 ```bash
@@ -76,6 +101,10 @@ chmod +x test-all.sh
 ./test-all.sh # will run all available tests
 ```
 
+### Run MNIST! (running on Conv2D and MaxPool2D)
+```bash
+PYTHONPATH=. python3 examples/mnist.py
+```
 --- 
 
 ### Installation & Dependencies
@@ -85,24 +114,3 @@ git clone https://github.com/yourusername/monograd.git
 cd monograd
 pip install numpy
 ```
-
-# junk
-py flags
-```
-PYTHONPATH=. DEBUG=TRUE
-```
-
-code notes
-```
-MEMIMPROVEMENT: note about possible memory improvement
-PERFIMPROVEMENT: note about possible performance improvement
-REMOVE: remove ltr
-```
-
-todo
-- Tests
-- Check for refactoring optimizations
-- Adam optimizer
-- Save/Load weigths & bias 
-- HIP/CUDA kernels (requires huge refactoring)
-- Conv2d; MaxPool2d layers
