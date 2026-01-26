@@ -88,13 +88,6 @@ Turns out you can build 95% of real world networks with **monograd**'s available
 
 ---
 
-### Roadmap
-- [ x ] Conv2d (CPU)
-- [ x ] MaxPool2D (CPU)
-- [ x ] general refactoring with tinygrad-like file struct(nn, datasets) 
-- [ ] ~~GPU Support (CUDA/HIP)~~
-- [ ] ~~GPU kernel code gen (JIT)~~
-
 ### Running tests
 ```bash
 chmod +x test-all.sh
@@ -105,6 +98,16 @@ chmod +x test-all.sh
 ```bash
 PYTHONPATH=. python3 examples/mnist.py
 ```
+
+---
+
+### Roadmap
+- [x] Conv2d (CPU)
+- [x] MaxPool2D (CPU)
+- [x] general refactoring with tinygrad-like file struct(nn, datasets) 
+- [ ] ~~GPU Support (CUDA/HIP)~~
+- [ ] ~~GPU kernel code gen (JIT)~~
+
 --- 
 
 ### Installation & Dependencies
