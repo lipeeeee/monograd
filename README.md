@@ -38,6 +38,13 @@ optim = optim.SGD(model.parameters(), lr=0.01)
 
 ---
 
+### Installing monograd
+```bash
+pip install monograd # numpy dependency
+```
+
+---
+
 ### monograd vs Pytorch
 ```py
 from monograd.tensor import Tensor
@@ -107,13 +114,3 @@ PYTHONPATH=. python3 examples/mnist.py
 - [x] general refactoring with tinygrad-like file struct(nn, datasets) 
 - [ ] ~~GPU Support (CUDA/HIP)~~
 - [ ] ~~GPU kernel code gen (JIT)~~
-
---- 
-
-### Installation & Dependencies
-Only dependency is numpy!
-```
-git clone https://github.com/yourusername/monograd.git
-cd monograd
-pip install numpy
-```
