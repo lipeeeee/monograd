@@ -137,15 +137,15 @@ def plot_prediction(model, x_test, y_test):
     plt.title("Model Confidence")
 
     plt.tight_layout()
-    plt.savefig('single_prediction.png')
-    print(f"Saved prediction visualization to 'single_prediction.png' (Index {idx})")
+    plt.savefig('data/single_prediction.png')
+    print(f"Saved prediction visualization to 'data/single_prediction.png' (Index {idx})")
 
 # Call it
 plot_prediction(model, x_test, y_test) 
 import matplotlib.pyplot as plt
 import numpy as np
 
-def save_prediction_grid(model, x_test, y_test, filename='mnist_predictions_50.png'):
+def save_prediction_grid(model, x_test, y_test, filename='data/mnist_predictions_50.png'):
     print(f"Generating 50-image grid... saving to {filename}")
     
     # 1. Setup the figure grid
