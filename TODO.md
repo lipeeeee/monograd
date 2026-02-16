@@ -1,3 +1,7 @@
+# next
+- opmixin
+
+
 # important
 - environmentalize/globalize data/ folder for downloding and caching (is it a good name?)
 - review latest ops
