@@ -11,6 +11,8 @@ class DTypeMetaClass(type):
     DTypeMetaClass.dcache[args] = ret = super().__call__(*args)
     return ret
 
+ConstType = int | float | bool
+
 @dataclass(frozen=True)
 class DType(metaclass=DTypeMetaClass):
   priority: int
@@ -87,3 +89,6 @@ class dtypes:
   sints = (int8, int16, int32, int64)
   ints = uints + sints
   all = floats + ints + (bool, void)
+
+DTypeLike = str|DType
+def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower())
