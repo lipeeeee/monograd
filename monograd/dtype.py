@@ -8,7 +8,7 @@ class DTypeMetaClass(type):
   dcache: dict[tuple, DType] = {}
   def __call__(self, *args, **kwds):
     if (ret:=DTypeMetaClass.dcache.get(args, None)) is not None: return ret
-    DTypeMetaClass.dcache[args] = ret = super().__call__(args)
+    DTypeMetaClass.dcache[args] = ret = super().__call__(*args)
     return ret
 
 @dataclass(frozen=True)
