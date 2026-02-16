@@ -8,10 +8,11 @@
 
 
 # important longterm
-- refactor to support gpu ops
+- refactor to support gpu ops (we will use pyopencl)
+  - If user doesnt have it installed, we extract it via ctypes
 - UPAT to lower number of gpu instructions, see tinygrad
+- LazyBuffer for tensor data
 - Kernel fusion(god pls help)
-- lazyload tensor data
 
 
 # unimportant
