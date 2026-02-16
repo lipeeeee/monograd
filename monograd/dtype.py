@@ -1,7 +1,9 @@
 from __future__ import annotations
-from typing import Final, ClassVar, Callable, Literal
+import functools
+from typing import Final, ClassVar
 from dataclasses import dataclass
 
+# only allow 1 creation of each dtype
 class DTypeMetaClass(type):
   dcache: dict[tuple, DType] = {}
   def __call__(self, *args, **kwds):
@@ -15,19 +17,41 @@ class DType(metaclass=DTypeMetaClass):
   bitsize: int
   name: str
   fmt: str
-
+  
   @staticmethod
   def new(priority:int, bitsize:int, name:str, fmt:str): return DType(priority, bitsize, name, fmt)
 
+  @property
+  def min(self): return dtypes.min(self)
+  @property
+  def max(self): return dtypes.max(self)
+
 class dtypes:
   @staticmethod
-  def is_int(x: DType) -> bool: return False
+  @functools.cache
+  def is_int(x: DType) -> bool: return x in dtypes.ints 
   @staticmethod
-  def is_float(x: DType) -> bool: return False
+  @functools.cache
+  def is_float(x: DType) -> bool: return x in dtypes.floats
   @staticmethod
-  def is_unsigned(x: DType) -> bool: return False
+  @functools.cache
+  def is_unsigned(x: DType) -> bool: return x in dtypes.uints
   @staticmethod
-  def is_bool(x: DType) -> bool: return False
+  def is_bool(x: DType) -> bool: return x == dtypes.bool
+  @staticmethod
+  @functools.cache
+  def min(dtype: DType):
+    if dtypes.is_int(dtype): return 0 if dtypes.is_unsigned(dtype) else -2 ** (dtype.bitsize-1)
+    if dtypes.is_float(dtype): return -float("inf")
+    if dtypes.is_bool(dtype): return False
+    raise RuntimeError(f"Could not infer min of dtype {dtype.name}")
+  @staticmethod
+  @functools.cache
+  def max(dtype: DType):
+    if dtypes.is_int(dtype): return 2 ** (dtype.bitsize-1) + dtypes.min(dtype)
+    if dtypes.is_float(dtype): return float("inf")
+    if dtypes.is_bool(dtype): return True
+    raise RuntimeError(f"Could not infer max of dtype {dtype.name}")
   @staticmethod
   def from_py(x) -> DType:
     if x.__class__ is float: return dtypes.default_float
@@ -57,3 +81,9 @@ class dtypes:
 
   default_float: ClassVar[DType] = float32
   default_int: ClassVar[DType] = int32
+
+  floats = (float16, float32, float64)
+  uints = (uint8, uint16, uint32, uint64)
+  sints = (int8, int16, int32, int64)
+  ints = uints + sints
+  all = floats + ints + (bool, void)
