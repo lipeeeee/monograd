@@ -22,11 +22,12 @@ class DType(metaclass=DTypeMetaClass):
   
   @staticmethod
   def new(priority:int, bitsize:int, name:str, fmt:str): return DType(priority, bitsize, name, fmt)
-
   @property
   def min(self): return dtypes.min(self)
   @property
   def max(self): return dtypes.max(self)
+  @property
+  def itemsize(self) -> int: return (self.bitsize + 7) // 8
 
 class dtypes:
   @staticmethod
