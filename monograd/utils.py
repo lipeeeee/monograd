@@ -7,11 +7,6 @@ def dbg(*args, **kwargs):
     if DEBUG_MODE:
         print(*args, **kwargs)
 
-class Device(Enum):
-    CPU = 1
-    GPU = 2
-    METAL = 3
-
 def get_im2col_indices(x_shape, field_height, field_width, padding=1, stride=1):
     N, C, H, W = x_shape
     assert (H + 2 * padding - field_height) % stride == 0
