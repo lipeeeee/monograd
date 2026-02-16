@@ -1,6 +1,11 @@
+# **** monograd
 # for runtime stuff to cache
 data/**/*
 
+# generated stuff
+poetry.lock
+
+# **** default py gitignore
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
