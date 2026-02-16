@@ -5,6 +5,7 @@ from enum import auto, IntEnum, Enum
 class Ops(IntEnum):
   # No shape
   LOAD = auto(); STORE = auto(); CONST = auto()
+  COPY = auto()
 
   # Unary Ops
   NEG = auto(); RELU = auto(); LOG = auto(); EXP = auto()
@@ -32,7 +33,7 @@ class GroupOp:
   ALU = set.union(Unary, Binary, Ternary)
 
   # Buffer types
-  # Buffer = {Ops.LOAD, Ops.STORE, Ops.CONST}
+  Buffer = {Ops.LOAD, Ops.STORE, Ops.CONST}
 
   # BinaryOps where f(f(a,b),c) = f(a,f(b,c))
   # Associative = {Ops.ADD, Ops.MUL, Ops.AND, Ops.OR, Ops.MAX}

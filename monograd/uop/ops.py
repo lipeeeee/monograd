@@ -17,3 +17,4 @@ class UOp(metaclass=UOpMetaClass):
   op: Ops
   dtype: DType = dtypes.void
   src: tuple[UOp, ...] = tuple()
+  arg:Any = None
