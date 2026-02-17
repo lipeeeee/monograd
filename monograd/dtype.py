@@ -1,5 +1,5 @@
-import functools
 from __future__ import annotations
+import functools
 from typing import Final, ClassVar
 from dataclasses import dataclass
 
