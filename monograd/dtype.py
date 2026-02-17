@@ -1,5 +1,5 @@
-from __future__ import annotations
 import functools
+from __future__ import annotations
 from typing import Final, ClassVar
 from dataclasses import dataclass
 
@@ -28,6 +28,8 @@ class DType(metaclass=DTypeMetaClass):
   def max(self): return dtypes.max(self)
   @property
   def itemsize(self) -> int: return (self.bitsize + 7) // 8
+  @property
+  def np_dtype(self) -> type: return to_np_dtype(self)
 
 class dtypes:
   @staticmethod
@@ -93,3 +95,7 @@ class dtypes:
 
 DTypeLike = str|DType
 def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower())
+@functools.cache
+def to_np_dtype(dtype:DType) -> type:
+  import numpy as np
+  return np.dtype(dtype.fmt).type

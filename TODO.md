@@ -3,6 +3,7 @@
 
 
 # important
+- GlobalCounters for mem_used;global_ops;global_mem;kernel_count;
 - environmentalize/globalize data/ folder for downloding and caching (is it a good name?)
 - review latest ops
 - remove device class from utils
