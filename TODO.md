@@ -1,4 +1,5 @@
 # next
+- tensor.to(device)
 - opmixin
 
 

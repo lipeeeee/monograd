@@ -1,7 +1,9 @@
-from enum import Enum
 import numpy as np
 import os
 
+def flat_mv(mv:memoryview) -> memoryview: return mv if len(mv) == 0 else mv.cast("B", shape=(mv.nbytes,))
+
+#### 
 DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("true", "1", "t")
 def dbg(*args, **kwargs):
     if DEBUG_MODE:
