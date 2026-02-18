@@ -1,5 +1,6 @@
 from __future__ import annotations
 import functools
+import numpy as np
 from typing import Final, ClassVar
 from dataclasses import dataclass
 
@@ -97,5 +98,4 @@ DTypeLike = str|DType
 def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower())
 @functools.cache
 def to_np_dtype(dtype:DType) -> type:
-  import numpy as np
   return np.dtype(dtype.fmt).type
