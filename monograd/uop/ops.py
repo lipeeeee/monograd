@@ -4,7 +4,7 @@ from typing import Any
 import weakref
 from monograd.device import Buffer, Device
 from monograd.dtype import DType, dtypes
-from monograd.uop import Ops
+from monograd.uop import GroupOp, Ops
 
 # only allow unique UOps
 class UOpMetaClass(type):
@@ -35,11 +35,19 @@ class UOp(metaclass=UOpMetaClass):
   def shape(self) -> tuple:
     if self.op is Ops.LOAD: return self.arg
     raise NotImplementedError("unkown op")
+  @property
+  def buffer(self) -> Buffer: return _uop_buffers[self]
   def assign_buffer(self, device:Device, size:int, initial_value=None) -> Buffer:
+    assert self.op in GroupOp.Buffer, f"op {self.op} can't have a buffer attatched"
     if (dret:=_uop_buffers.get(self, None)) is not None: return dret
     ret = Buffer(device, size, self.dtype)
     ret.allocate(initial_value)
     _uop_buffers[self] = ret
     return ret
+  def __del__(self): 
+    try:
+      del _uop_buffers[self]
+      del UOpMetaClass.ucache[(self.op, self.dtype, self.src, self.arg)]
+    except AttributeError: pass
   def __repr__(self):
     return f"<UOp {self.op} dtype={self.dtype.name} arg={self.arg}>"

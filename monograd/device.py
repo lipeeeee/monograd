@@ -65,7 +65,6 @@ class Buffer:
     byte_offset = self.offset * self.dtype.itemsize
     if self.device == Device.CPU:
       dest_view = self._buf.view(np.uint8)[byte_offset:byte_offset+self.nbytes]
-      print(np.frombuffer(mv, dtype=np.uint8).shape)
       np.copyto(dest_view, np.frombuffer(mv, dtype=np.uint8))
     elif self.device == Device.GPU:
       cl.enqueue_copy(CL_QUEUE, self._buf, mv, device_offset=byte_offset, is_blocking=True)
