@@ -38,7 +38,7 @@ class UOp(metaclass=UOpMetaClass):
   @property
   def buffer(self) -> Buffer: return _uop_buffers[self]
   def assign_buffer(self, device:Device, size:int, initial_value=None) -> Buffer:
-    assert self.op in GroupOp.Buffer, f"op {self.op} can't have a buffer attatched"
+    assert self.op in GroupOp.All, f"op {self.op} can't have a buffer attatched" # TODO: limit what ops can get buffr
     if (dret:=_uop_buffers.get(self, None)) is not None: return dret
     ret = Buffer(device, size, self.dtype)
     ret.allocate(initial_value)
