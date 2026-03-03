@@ -41,7 +41,7 @@ class Tensor(OpMixin):
   @property
   def shape(self) -> tuple: return self.uop.shape
   def to(self, device:DeviceLike) -> Tensor:
-    if (device:=to_device(device)) == self.device: return
+    if (device:=to_device(device)) == self.device: return self
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self,), device)
     ret = Tensor(copy_device_uop, self.requires_grad, self.device, self.dtype)
     return ret
@@ -51,13 +51,12 @@ class Tensor(OpMixin):
 if __name__ == "__main__":
   # TODO: SHAPE ;  do we only need shape on load? for sure need shape on store
   a = Tensor([1, 2, 3, 4], device="gpu")
-  a.uop.arg.allocate()
   t1 = memoryview(np.array([1,2,3,4], dtype=dtypes.int32.np_dtype))
-  a.uop.arg.copyin(t1)
+  a.uop.buffer.copyin(t1)
   t2 = memoryview(np.zeros(4, dtype=dtypes.int32.np_dtype))
-  print(np.frombuffer(a.uop.arg.copyout(t2), dtype=dtypes.int32.np_dtype))
-  print(a.uop.arg)
-  # a = Tensor([1,2,3,4]).to("gpu").to("cpu").to("gpu")
+  print(np.frombuffer(a.uop.buffer.copyout(t2), dtype=dtypes.int32.np_dtype))
+  print(a.uop)
+  a = Tensor([1,2,3,4]).to("gpu").to("cpu").to("gpu")
   # for e, t in build_str_graph(a.uop):
   #   print("\t"*t, e)
 

@@ -34,6 +34,7 @@ class UOp(metaclass=UOpMetaClass):
   @property
   def shape(self) -> tuple:
     if self.op is Ops.LOAD: return self.arg
+    if self.op is Ops.COPY: return self.src[0].shape # NOTE: should we even allow copy to know it's shape?
     raise NotImplementedError("unkown op")
   @property
   def buffer(self) -> Buffer: return _uop_buffers[self]
@@ -48,6 +49,7 @@ class UOp(metaclass=UOpMetaClass):
     try:
       del _uop_buffers[self]
       del UOpMetaClass.ucache[(self.op, self.dtype, self.src, self.arg)]
-    except AttributeError: pass
+    except (AttributeError, KeyError): pass
+  def __hash__(self): return id(self) # NOTE: Not hashing this causes an exception, but im unsure if this will cause problems because of weakref
   def __repr__(self):
     return f"<UOp {self.op} dtype={self.dtype.name} arg={self.arg}>"
