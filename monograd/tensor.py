@@ -40,16 +40,49 @@ class Tensor(OpMixin):
   def parents(self) -> tuple: return self.uop.src
   @property
   def shape(self) -> tuple: return self.uop.shape
+  @property
+  def ndim(self) -> int: return len(self.shape) # NOTE: maybe this goes in movement mixin (tinygrad does it)
+  def expand(self, shape:tuple) -> Tensor: ...
+  def reshape(self, pad:tuple) -> Tensor: ...
+  def _broadcasted(self, y:Tensor, reverse:bool=False) -> tuple[Tensor, Tensor]:
+    # uses EXPAND and RESHAPE ops to broadcast 2 tensors
+    target_shape, pad_x, pad_y = get_broadcasted_shape(self.shape, y.shape)
+    if (x:=self).shape != pad_x: x = x.reshape(pad_x)
+    if x != target_shape: x = x.expand(target_shape)
+    if y.shape != pad_y: y = y.reshape(pad_y)
+    if y != target_shape: y = y.expand(target_shape)
+    return (y,x) if reverse else(x, y)
+
+  def _unop(self, op:Ops) -> Tensor:
+    ret = Tensor.__new__(Tensor)
+    ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
+    return ret
+  def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
+    lhs, rhs = self._broadcasted(x, reverse)
+    assert lhs.dtype == rhs.dtype, f"type {lhs.dtype} doesn't match {rhs.dtype}"
+    assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.dtype}"
+    ret = Tensor.__new__(Tensor)
+    ret.uop = UOp(op, lhs.dtype, (lhs.uop, rhs.uop), lhs.device) 
+    return ret
+  def _ternop(self, op:Ops, x:Tensor, y:Tensor, reverse:bool=False) -> Tensor:
+    raise NotImplementedError("need 3-way broadcast functio")
   def to(self, device:DeviceLike) -> Tensor:
     if (device:=to_device(device)) == self.device: return self
-    copy_device_uop = UOp(Ops.COPY, self.dtype, (self,), device)
+    copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)
     ret = Tensor(copy_device_uop, self.requires_grad, self.device, self.dtype)
     return ret
   def __repr__(self):
     return f"<Tensor {self.uop} requires_grad={self.requires_grad}>"
 
+def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]:
+  if s1 == s2: return s1, s1, s2
+  max_dims = max(len(s1), len(s2))
+  pad1, pad2 = (1,) * (max_dims - len(s1)) + s1, (1,) * (max_dims - len(s2)) + s2 
+  assert all(d1 == d2 or d1 == 1 or d2 == 1 for d1, d2 in zip(pad1, pad2)), f"cannot broadcast {s1} to {s2}"
+  target_shape = tuple(max(d1, d2) for d1, d2 in zip(pad1, pad2))
+  return target_shape, pad1, pad2
+
 if __name__ == "__main__":
-  # TODO: SHAPE ;  do we only need shape on load? for sure need shape on store
   a = Tensor([1, 2, 3, 4], device="gpu")
   t1 = memoryview(np.array([1,2,3,4], dtype=dtypes.int32.np_dtype))
   a.uop.buffer.copyin(t1)

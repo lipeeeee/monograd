@@ -45,6 +45,10 @@ class UOp(metaclass=UOpMetaClass):
     ret.allocate(initial_value)
     _uop_buffers[self] = ret
     return ret
+  def alu(self, op:Ops, *src:UOp, **kwargs):
+    out_dtype = (self, *src)[-1].dtype
+    print(f"Creating(ALU) UOp(op={op}, dtype={out_dtype}, src={(self,)+src})")
+    return UOp(op, out_dtype, (self,)+src)
   def __del__(self): 
     try:
       del _uop_buffers[self]
