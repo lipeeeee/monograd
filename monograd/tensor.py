@@ -1,11 +1,12 @@
 from __future__ import annotations
+from monograd.mixin import OpMixin
+from monograd.mixin.movement import _align_left
 from monograd.device import Buffer, Device, DeviceLike, to_device
 from monograd.dtype import ConstType, DType, DTypeLike, dtypes, to_dtype
 from monograd.uop import Ops
 from monograd.uop.ops import UOp
 import numpy as np 
 
-class OpMixin: pass
 class Tensor(OpMixin):
   def __init__(self, data: ConstType|UOp|list|tuple|np.ndarray|None, requires_grad:bool = True,
                device:DeviceLike = Device.CPU, dtype:DTypeLike|None = None, name:str|None = None):
@@ -42,8 +43,6 @@ class Tensor(OpMixin):
   def shape(self) -> tuple: return self.uop.shape
   @property
   def ndim(self) -> int: return len(self.shape) # NOTE: maybe this goes in movement mixin (tinygrad does it)
-  def expand(self, shape:tuple) -> Tensor: ...
-  def reshape(self, pad:tuple) -> Tensor: ...
   def _broadcasted(self, y:Tensor, reverse:bool=False) -> tuple[Tensor, Tensor]:
     # uses EXPAND and RESHAPE ops to broadcast 2 tensors
     target_shape, pad_x, pad_y = get_broadcasted_shape(self.shape, y.shape)
@@ -53,6 +52,8 @@ class Tensor(OpMixin):
     if y != target_shape: y = y.expand(target_shape)
     return (y,x) if reverse else(x, y)
 
+  def _mop(self, op:Ops, arg) -> Tensor:
+    raise NotImplementedError             ################ DO THIS
   def _unop(self, op:Ops) -> Tensor:
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
@@ -66,7 +67,7 @@ class Tensor(OpMixin):
     return ret
   def _ternop(self, op:Ops, x:Tensor, y:Tensor, reverse:bool=False) -> Tensor:
     raise NotImplementedError("need 3-way broadcast functio")
-  def to(self, device:DeviceLike) -> Tensor:
+  def to(self, device:DeviceLike) -> Tensor: # NOTE does this handle changing the device of grad???     !!!
     if (device:=to_device(device)) == self.device: return self
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)
     ret = Tensor(copy_device_uop, self.requires_grad, self.device, self.dtype)
@@ -74,10 +75,9 @@ class Tensor(OpMixin):
   def __repr__(self):
     return f"<Tensor {self.uop} requires_grad={self.requires_grad}>"
 
-def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]:
+def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]: # this can probably be re-done for to support *shapes
   if s1 == s2: return s1, s1, s2
-  max_dims = max(len(s1), len(s2))
-  pad1, pad2 = (1,) * (max_dims - len(s1)) + s1, (1,) * (max_dims - len(s2)) + s2 
+  pad1, pad2 = _align_left(s1, s2)
   assert all(d1 == d2 or d1 == 1 or d2 == 1 for d1, d2 in zip(pad1, pad2)), f"cannot broadcast {s1} to {s2}"
   target_shape = tuple(max(d1, d2) for d1, d2 in zip(pad1, pad2))
   return target_shape, pad1, pad2

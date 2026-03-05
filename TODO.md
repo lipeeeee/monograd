@@ -1,6 +1,6 @@
 # next
-- tensor.to(device)
-- opmixin
+- USE mixins to implement _BINOP _MOVOP and _UNOP
+- might be usefull to log stuff
 
 
 # important
@@ -9,7 +9,6 @@
 - review latest ops
 - remove device class from utils
 - DEBUG=int flag like in tinygrad
-- UOp
 - do adam & adamw
 
 

@@ -19,10 +19,10 @@ class DType(metaclass=DTypeMetaClass):
   priority: int
   bitsize: int
   name: str
-  fmt: str
+  fmt: str|None
   
   @staticmethod
-  def new(priority:int, bitsize:int, name:str, fmt:str): return DType(priority, bitsize, name, fmt)
+  def new(priority:int, bitsize:int, name:str, fmt:str|None): return DType(priority, bitsize, name, fmt)
   @property
   def min(self): return dtypes.min(self)
   @property
