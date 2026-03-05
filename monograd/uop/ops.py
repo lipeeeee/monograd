@@ -31,13 +31,17 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.CONST: return self.arg[1]
     if self.op is Ops.LOAD: return _uop_buffers[self].device
     if self.op is Ops.COPY: return self.arg
-    raise NotImplementedError(f"unkown op {self.op}")
+    if self.op in GroupOp.Binary: return self.arg
+    # NOTE: move ops get their device from self.src[0].device
+    raise NotImplementedError(f"unkown op {self.op} > {self}")
   @property
   def shape(self) -> tuple:
     if self.op is Ops.CONST: return (1,)
     if self.op is Ops.LOAD: return self.arg
-    if self.op is Ops.COPY: return self.src[0].shape # NOTE: should we even allow copy to know it's shape?
-    raise NotImplementedError(f"unkown op {self.op}")
+    if self.op is Ops.COPY: return self.src[0].shape
+    if self.op in GroupOp.Binary: return self.src[0].shape # NOTE: src[0] and src[1] should have the same shape?
+    # NOTE: reshape&expand get their shape via arg
+    raise NotImplementedError(f"unkown op {self.op} > {self}")
   @property
   def buffer(self) -> Buffer: return _uop_buffers[self]
   def assign_buffer(self, device:Device, size:int, initial_value=None) -> Buffer:

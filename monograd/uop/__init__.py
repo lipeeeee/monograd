@@ -21,6 +21,7 @@ class Ops(IntEnum):
     
   # Movement/Shape Ops
   RESHAPE = auto()
+  EXPAND = auto()
   PERMUTE = auto()
 
   def __str__(self): return Enum.__str__(self)

@@ -54,7 +54,10 @@ class Tensor(OpMixin):
 
   def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
   def _mop(self, op:Ops, arg) -> Tensor:
-    raise NotImplementedError             ################ DO THIS
+    ret = Tensor.__new__(Tensor)
+    ret.uop = UOp(op, self.dtype, (self.uop,), arg)
+    ret.requires_grad = self.requires_grad
+    return ret
   def _unop(self, op:Ops) -> Tensor:
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
@@ -85,8 +88,9 @@ def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]: # t
   return target_shape, pad1, pad2
 
 if __name__ == "__main__":
-  a = Tensor(1)
+  a = Tensor(1).to("gpu")
   b = a + 1
+  print(b.device)
   print(b.parents)
   # a = Tensor([1, 2, 3, 4], device="gpu")
   # t1 = memoryview(np.array([1,2,3,4], dtype=dtypes.int32.np_dtype))
