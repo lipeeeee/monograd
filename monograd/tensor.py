@@ -21,7 +21,7 @@ class Tensor(OpMixin):
     if isinstance(data, UOp):
       assert _dtype is None or _dtype == data.dtype, f"dtype mismatch: {_dtype} vs {data.dtype}"
     elif isinstance(data, ConstType):
-      data = UOp(Ops.CONST, _dtype, (), data)
+      data = UOp(Ops.CONST, _dtype, (), (data, _device))
     elif isinstance(data, list|tuple|np.ndarray):
       buf = np.array(data)
       data = UOp(Ops.LOAD, _dtype, (), buf.shape)
@@ -47,11 +47,12 @@ class Tensor(OpMixin):
     # uses EXPAND and RESHAPE ops to broadcast 2 tensors
     target_shape, pad_x, pad_y = get_broadcasted_shape(self.shape, y.shape)
     if (x:=self).shape != pad_x: x = x.reshape(pad_x)
-    if x != target_shape: x = x.expand(target_shape)
+    if x.shape != target_shape: x = x.expand(target_shape)
     if y.shape != pad_y: y = y.reshape(pad_y)
-    if y != target_shape: y = y.expand(target_shape)
+    if y.shape != target_shape: y = y.expand(target_shape)
     return (y,x) if reverse else(x, y)
 
+  def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
   def _mop(self, op:Ops, arg) -> Tensor:
     raise NotImplementedError             ################ DO THIS
   def _unop(self, op:Ops) -> Tensor:
@@ -61,9 +62,10 @@ class Tensor(OpMixin):
   def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
     lhs, rhs = self._broadcasted(x, reverse)
     assert lhs.dtype == rhs.dtype, f"type {lhs.dtype} doesn't match {rhs.dtype}"
-    assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.dtype}"
+    assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.device}"
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, lhs.dtype, (lhs.uop, rhs.uop), lhs.device) 
+    ret.requires_grad = True if lhs.requires_grad or rhs.requires_grad else False
     return ret
   def _ternop(self, op:Ops, x:Tensor, y:Tensor, reverse:bool=False) -> Tensor:
     raise NotImplementedError("need 3-way broadcast functio")
@@ -83,15 +85,16 @@ def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]: # t
   return target_shape, pad1, pad2
 
 if __name__ == "__main__":
-  a = Tensor([1, 2, 3, 4], device="gpu")
-  t1 = memoryview(np.array([1,2,3,4], dtype=dtypes.int32.np_dtype))
-  a.uop.buffer.copyin(t1)
-  t2 = memoryview(np.zeros(4, dtype=dtypes.int32.np_dtype))
-  print(np.frombuffer(a.uop.buffer.copyout(t2), dtype=dtypes.int32.np_dtype))
-  print(a.uop)
-  a = Tensor([1,2,3,4]).to("gpu").to("cpu").to("gpu")
-  # for e, t in build_str_graph(a.uop):
-  #   print("\t"*t, e)
+  a = Tensor(1)
+  b = a + 1
+  print(b.parents)
+  # a = Tensor([1, 2, 3, 4], device="gpu")
+  # t1 = memoryview(np.array([1,2,3,4], dtype=dtypes.int32.np_dtype))
+  # a.uop.buffer.copyin(t1)
+  # t2 = memoryview(np.zeros(4, dtype=dtypes.int32.np_dtype))
+  # print(np.frombuffer(a.uop.buffer.copyout(t2), dtype=dtypes.int32.np_dtype))
+  # print(a.uop)
+  # a = Tensor([1,2,3,4]).to("gpu").to("cpu").to("gpu")
 
 # def build_str_graph(root:UOp):
 #   visited:set = set()

@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import Self
-
 from monograd.uop import Ops
 
 # taken from tinygrad/movementmixin.py

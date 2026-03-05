@@ -28,14 +28,16 @@ class UOp(metaclass=UOpMetaClass):
 
   @property
   def device(self) -> Device:
+    if self.op is Ops.CONST: return self.arg[1]
     if self.op is Ops.LOAD: return _uop_buffers[self].device
     if self.op is Ops.COPY: return self.arg
-    raise NotImplementedError("unkown op")
+    raise NotImplementedError(f"unkown op {self.op}")
   @property
   def shape(self) -> tuple:
+    if self.op is Ops.CONST: return (1,)
     if self.op is Ops.LOAD: return self.arg
     if self.op is Ops.COPY: return self.src[0].shape # NOTE: should we even allow copy to know it's shape?
-    raise NotImplementedError("unkown op")
+    raise NotImplementedError(f"unkown op {self.op}")
   @property
   def buffer(self) -> Buffer: return _uop_buffers[self]
   def assign_buffer(self, device:Device, size:int, initial_value=None) -> Buffer:
