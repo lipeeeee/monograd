@@ -1,5 +1,4 @@
 # next
-- USE mixins to implement _BINOP _MOVOP and _UNOP
 - might be usefull to log stuff
 
 
@@ -10,6 +9,7 @@
 - remove device class from utils
 - DEBUG=int flag like in tinygrad
 - do adam & adamw
+- .to() creates COPY OP before realize, it should be a NOOP
 
 
 # important longterm

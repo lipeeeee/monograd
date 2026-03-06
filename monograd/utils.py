@@ -2,6 +2,11 @@ import numpy as np
 import os
 
 def flat_mv(mv:memoryview) -> memoryview: return mv if len(mv) == 0 else mv.cast("B", shape=(mv.nbytes,))
+def argfix(*x):
+  if x and x[0].__class__ in (tuple, list):
+    if len(x) != 1: raise ValueError(f"bad arg {x}")
+    return tuple(x[0])
+  return x
 
 #### 
 DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("true", "1", "t")

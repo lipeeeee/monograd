@@ -86,12 +86,36 @@ def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]: # t
   assert all(d1 == d2 or d1 == 1 or d2 == 1 for d1, d2 in zip(pad1, pad2)), f"cannot broadcast {s1} to {s2}"
   target_shape = tuple(max(d1, d2) for d1, d2 in zip(pad1, pad2))
   return target_shape, pad1, pad2
+def print_graph(uop:Tensor|UOp, prefix:str="", is_last:bool=True, visited:set|None=None):
+  if isinstance(uop, Tensor): uop = uop.uop
+  if visited is None: visited = set()
+  marker = "└── " if is_last else "├── "
+  op_name = uop.op.name if hasattr(uop.op, "name") else str(uop.op)
+  shape_str = f" {uop.shape}" if hasattr(uop, 'shape') else ""
+  arg_str = f" arg={uop.arg}" if uop.arg is not None else ""
+
+  node_id = id(uop)
+  if node_id in visited:
+    print(f"{prefix}{marker}{op_name}{shape_str}{arg_str} [SEEN]")
+    return
+  visited.add(node_id)
+
+  # current
+  print(f"{prefix}{marker}{op_name}{shape_str}{arg_str}")
+  # sources
+  if hasattr(uop, 'src') and uop.src:
+    next_prefix = prefix + ("    " if is_last else "│   ")
+    for i, src_uop in enumerate(uop.src):
+      is_last_src = (i == len(uop.src) - 1)
+      print_graph(src_uop, next_prefix, is_last_src, visited)
 
 if __name__ == "__main__":
-  a = Tensor(1).to("gpu")
-  b = a + 1
-  print(b.device)
-  print(b.parents)
+  a = Tensor([[1, 2, 3], [4, 5, 6]], device="gpu")
+  b = Tensor([3, 2, 1], device="gpu")
+  c = (a * 2) + b
+  print_graph(c)
+  
+
   # a = Tensor([1, 2, 3, 4], device="gpu")
   # t1 = memoryview(np.array([1,2,3,4], dtype=dtypes.int32.np_dtype))
   # a.uop.buffer.copyin(t1)
