@@ -1,5 +1,6 @@
 # next
-- might be usefull to log stuff
+- handle casting dtypes (and upcasting)
+- check jax docs
 
 
 # important
