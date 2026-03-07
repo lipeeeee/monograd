@@ -24,3 +24,9 @@ class MathMixin:
     return self.mul(x)
   def __sub__(self, x:Self|ConstType):
     return self.sub(x)
+  def __radd__(self, x:Self|ConstType):
+    return self.add(x, True)
+  def __rmul__(self, x:Self|ConstType):
+    return self.mul(x, True)
+  def __rsub__(self, x:Self|ConstType):
+    return self.sub(x, True)

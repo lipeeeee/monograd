@@ -53,6 +53,21 @@ class Tensor(OpMixin):
     return (y,x) if reverse else(x, y)
 
   def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
+  def _reduceop(self, op:Ops, axis:int|tuple[int, ...]|None=None, keepdim:bool=False) -> Tensor:
+    if axis is None: resolved_axis = tuple(range(self.ndim))
+    elif isinstance(axis, int): resolved_axis = (axis if axis >= 0 else axis + self.ndim,)
+    elif isinstance(axis, tuple): resolved_axis = tuple(x if x >= 0 else x + self.ndim for x in axis)
+    if self.ndim == 0: resolved_axis = () # 0D scalars
+    assert resolved_axis is not None, f"unable to resolve axis {axis}"
+    # compute reduced shape & create op
+    reduced_shape = tuple(1 if i in resolved_axis else s for i, s in enumerate(self.shape))
+    ret = Tensor.__new__(Tensor)
+    ret.uop = UOp(op, self.dtype, (self.uop,), arg=(resolved_axis, reduced_shape))
+    # handle keepdim
+    if not keepdim:
+      final_shape = tuple(s for i, s in enumerate(self.shape) if i not in resolved_axis)
+      return ret.reshape(final_shape if final_shape else (1,))
+    return ret
   def _mop(self, op:Ops, arg) -> Tensor:
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), arg)

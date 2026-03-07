@@ -3,7 +3,6 @@
 from enum import auto, IntEnum, Enum
 
 class Ops(IntEnum):
-  # No shape
   LOAD = auto(); STORE = auto(); CONST = auto()
   COPY = auto()
 
@@ -20,12 +19,13 @@ class Ops(IntEnum):
   WHERE = auto(); MULACC = auto()
     
   # Movement/Shape Ops
-  RESHAPE = auto()
-  EXPAND = auto()
-  PERMUTE = auto()
+  RESHAPE = auto(); EXPAND = auto();  PERMUTE = auto()
+
+  # Reduce ops
+  SUM = auto(); MEAN = auto()
 
   def __str__(self): return Enum.__str__(self)
-  def __repr__(x): return str(x)
+  def __repr__(self): return str(self)
 
 class GroupOp:
   Unary = {Ops.SIN, Ops.SQRT, Ops.NEG}
@@ -33,8 +33,9 @@ class GroupOp:
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)
 
-  # Buffer types
   Buffer = {Ops.LOAD, Ops.STORE, Ops.CONST}
+  Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE}
+  Reduce = {Ops.SUM, Ops.MEAN}
 
   # BinaryOps where f(f(a,b),c) = f(a,f(b,c))
   # Associative = {Ops.ADD, Ops.MUL, Ops.AND, Ops.OR, Ops.MAX}

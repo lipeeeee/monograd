@@ -95,6 +95,8 @@ class dtypes:
   all = floats + ints + (bool, void)
 
 DTypeLike = str|DType
+
 def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower())
 @functools.cache
 def to_np_dtype(dtype:DType) -> type: return np.dtype(dtype.fmt).type
+def cast_upwards(x:DType, y:DType) -> type: ... 
