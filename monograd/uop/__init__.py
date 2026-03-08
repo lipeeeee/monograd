@@ -8,13 +8,13 @@ class Ops(IntEnum):
 
   # Unary Ops
   NEG = auto(); RELU = auto(); LOG = auto(); EXP = auto()
-  SIN = auto(); SQRT = auto(); CAST = auto(); DIV = auto()
+  SIN = auto(); SQRT = auto(); CAST = auto()
     
   # Binary Ops
   ADD = auto(); SUB = auto(); MUL = auto();
   MAX = auto(); POW = auto(); MOD = auto()
   OR = auto(); XOR = auto(); AND = auto()
-  MATMUL = auto()
+  MATMUL = auto(); DIV = auto()
 
   # Ternary Ops
   WHERE = auto(); MULACC = auto()
