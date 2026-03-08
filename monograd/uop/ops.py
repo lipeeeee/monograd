@@ -33,6 +33,7 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.CONST: return self.arg[1]
     if self.op is Ops.LOAD: return _uop_buffers[self].device
     if self.op in GroupOp.Movement: return self.src[0].device
+    # if self.op is Ops.MATMUL: return self.arg
     if self.op in GroupOp.Binary: return self.arg
     if self.op in GroupOp.Unary: return self.arg
     if self.op in GroupOp.Reduce: return self.src[0].device
@@ -43,11 +44,14 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.COPY: return self.src[0].shape
     if self.op is Ops.CONST: return (1,)
     if self.op is Ops.LOAD: return self.arg
+    if self.op is Ops.PERMUTE: return tuple(self.src[0].shape[i] for i in self.arg)
+    if self.op is Ops.MATMUL: return self.src[0].shape[:-1] + (self.src[1].shape[-1],)
     if self.op in GroupOp.Movement: return self.arg
     if self.op in GroupOp.Unary: return self.src[0].shape
     if self.op in GroupOp.Binary: return self.src[0].shape # NOTE: src[0] and src[1] should have the same shape?
     if self.op in GroupOp.Reduce: return self.arg[1] # reduced shape
     raise NotImplementedError(f"unkown op {self.op} > {self}")
+
   @property
   def buffer(self) -> Buffer: return _uop_buffers[self]
   def assign_buffer(self, device:Device, size:int, initial_value=None) -> Buffer:
@@ -57,6 +61,7 @@ class UOp(metaclass=UOpMetaClass):
     ret.allocate(initial_value)
     _uop_buffers[self] = ret
     return ret
+
   def cast(self, dtype:DType) -> UOp:
     if self.dtype == dtype: return self # noop
     return UOp(Ops.CAST, dtype, (self,), self.device)
@@ -64,6 +69,7 @@ class UOp(metaclass=UOpMetaClass):
     out_dtype = (self, *src)[-1].dtype
     print(f"Creating(ALU) UOp(op={op}, dtype={out_dtype}, src={(self,)+src})")
     return UOp(op, out_dtype, (self,)+src)
+
   def __hash__(self): return id(self) # NOTE: Not hashing this causes an exception, but im unsure if this will cause problems because of weakref
   def __repr__(self):
     return f"<UOp {self.op} dtype={self.dtype.name} arg={self.arg}>"

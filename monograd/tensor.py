@@ -3,7 +3,7 @@ from typing import Any
 from monograd.mixin import OpMixin
 from monograd.mixin.movement import _align_left
 from monograd.device import Device, DeviceLike, to_device
-from monograd.dtype import ConstType, DType, DTypeLike, cast_upwards, dtypes, to_dtype
+from monograd.dtype import ConstType, DType, DTypeLike, dtypes, most_upper_dtype, to_dtype
 from monograd.uop import Ops
 from monograd.uop.ops import UOp
 import numpy as np 
@@ -79,14 +79,24 @@ class Tensor(OpMixin):
   def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
     lhs, rhs = self._broadcasted(x, reverse)
     assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.device}"
-    target_dtype = cast_upwards(lhs.dtype, rhs.dtype)
+    target_dtype = most_upper_dtype(lhs.dtype, rhs.dtype)
     lhs, rhs = lhs.cast(target_dtype), rhs.cast(target_dtype)
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, lhs.dtype, (lhs.uop, rhs.uop), lhs.device) 
-    ret.requires_grad = True if lhs.requires_grad or rhs.requires_grad else False
+    ret.requires_grad = lhs.requires_grad or rhs.requires_grad
     return ret
   def _ternop(self, op:Ops, x:Tensor, y:Tensor, reverse:bool=False) -> Tensor:
     raise NotImplementedError("need 3-way broadcast functio")
+
+  def matmul(self, x:Tensor) -> Tensor:
+    assert self.shape[-1] == x.shape[-2], f"matmul shape mismatch: {self.shape} x {x.shape}"
+    assert self.ndim == 2 and x.ndim == 2, "only 2D matmul for now" # NOTE: handle batched matmul later — for now assert 2D
+    target_dtype = most_upper_dtype(self.dtype, x.dtype)
+    self, x = self.cast(target_dtype), x.cast(target_dtype)
+    ret = Tensor.__new__(Tensor)
+    ret.uop = UOp(Ops.MATMUL, self.dtype, (self.uop, x.uop), self.device)
+    ret.requires_grad = self.requires_grad or x.requires_grad
+    return ret
   def cast(self, dtype:DTypeLike) -> Tensor:
     dtype = to_dtype(dtype)
     if self.dtype == dtype: return self # noop
@@ -94,6 +104,9 @@ class Tensor(OpMixin):
     ret.uop = self.uop.cast(dtype)
     ret.requires_grad = self.requires_grad
     return ret
+  def cast_upwards(self, *tensors:Tensor) -> tuple[Tensor, ...]|Tensor:
+    target = most_upper_dtype(*[t.dtype for t in tensors])
+    return tuple(t.cast(target) for t in tensors) if isinstance(tensors, tuple) else tensors.cast(target)
   def to(self, device:DeviceLike) -> Tensor: # NOTE does this handle changing the device of grad???     !!!
     if (device:=to_device(device)) == self.device: return self
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)

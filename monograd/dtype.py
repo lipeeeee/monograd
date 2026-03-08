@@ -95,7 +95,7 @@ class dtypes:
 @functools.cache
 def to_np_dtype(dtype:DType) -> np.dtype: return np.dtype(dtype.fmt)
 def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower())
-def cast_upwards(x:DType, y:DType) -> DType: return x if x.priority >= y.priority else y # NOTE: should we not use promo lattices like jax?
+def most_upper_dtype(*dtypes:DType) -> DType: return max(dtypes, key=lambda dt: dt.priority)
 
 ConstType = int|float|bool
 DTypeLike = str|DType

@@ -14,13 +14,16 @@ class Ops(IntEnum):
   ADD = auto(); SUB = auto(); MUL = auto();
   MAX = auto(); POW = auto(); MOD = auto()
   OR = auto(); XOR = auto(); AND = auto()
-  MATMUL = auto(); DIV = auto()
+  DIV = auto()
+
+  # BLAS
+  MATMUL = auto(); GEMM = auto()
 
   # Ternary Ops
   WHERE = auto(); MULACC = auto()
     
   # Movement/Shape Ops
-  RESHAPE = auto(); EXPAND = auto();  PERMUTE = auto()
+  RESHAPE = auto(); EXPAND = auto(); PERMUTE = auto()
 
   # Reduce ops
   SUM = auto();
@@ -35,8 +38,9 @@ class GroupOp:
   ALU = set.union(Unary, Binary, Ternary)
 
   Buffer = {Ops.LOAD, Ops.STORE, Ops.CONST}
-  Movement = {Ops.RESHAPE, Ops.EXPAND}
+  Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE}
   Reduce = {Ops.SUM}
+  BLAS = {Ops.MATMUL, Ops.GEMM}
 
   # BinaryOps where f(f(a,b),c) = f(a,f(b,c))
   # Associative = {Ops.ADD, Ops.MUL, Ops.AND, Ops.OR, Ops.MAX}
