@@ -1,8 +1,9 @@
 from __future__ import annotations
+from typing import Any
 from monograd.mixin import OpMixin
 from monograd.mixin.movement import _align_left
 from monograd.device import Buffer, Device, DeviceLike, to_device
-from monograd.dtype import ConstType, DType, DTypeLike, dtypes, to_dtype
+from monograd.dtype import ConstType, DType, DTypeLike, cast_upwards, dtypes, to_dtype
 from monograd.uop import Ops
 from monograd.uop.ops import UOp
 import numpy as np 
@@ -72,20 +73,28 @@ class Tensor(OpMixin):
     ret.uop = UOp(op, self.dtype, (self.uop,), arg)
     ret.requires_grad = self.requires_grad
     return ret
-  def _unop(self, op:Ops) -> Tensor:
+  def _unop(self, op:Ops, arg:Any) -> Tensor:
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
     return ret
   def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
     lhs, rhs = self._broadcasted(x, reverse)
-    assert lhs.dtype == rhs.dtype, f"type {lhs.dtype} doesn't match {rhs.dtype}"
     assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.device}"
+    target_dtype = cast_upwards(lhs.dtype, rhs.dtype)
+    lhs, rhs = lhs.cast(target_dtype), rhs.cast(target_dtype)
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, lhs.dtype, (lhs.uop, rhs.uop), lhs.device) 
     ret.requires_grad = True if lhs.requires_grad or rhs.requires_grad else False
     return ret
   def _ternop(self, op:Ops, x:Tensor, y:Tensor, reverse:bool=False) -> Tensor:
     raise NotImplementedError("need 3-way broadcast functio")
+  def cast(self, dtype:DTypeLike) -> Tensor:
+    dtype = to_dtype(dtype)
+    if self.dtype == dtype: return self # noop
+    ret = Tensor.__new__(Tensor)
+    ret.uop = self.uop.cast(dtype)
+    ret.requires_grad = self.requires_grad
+    return ret
   def to(self, device:DeviceLike) -> Tensor: # NOTE does this handle changing the device of grad???     !!!
     if (device:=to_device(device)) == self.device: return self
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)
@@ -124,7 +133,7 @@ def print_graph(uop:Tensor|UOp, prefix:str="", is_last:bool=True, visited:set|No
       print_graph(src_uop, next_prefix, is_last_src, visited)
 
 if __name__ == "__main__":
-  a = Tensor([[1, 2, 3], [4, 5, 6]], device="gpu")
+  a = Tensor([[1, 2, 3], [4, 5, 6]], device="gpu", dtype="float64")
   b = Tensor([3, 2, 1], device="gpu")
   c = (a * 2) + b
   print_graph(c)

@@ -55,6 +55,9 @@ class UOp(metaclass=UOpMetaClass):
     ret.allocate(initial_value)
     _uop_buffers[self] = ret
     return ret
+  def cast(self, dtype:DType) -> UOp:
+    if self.dtype == dtype: return self # noop
+    return UOp(Ops.CAST, dtype, (self, ), self.device)
   def alu(self, op:Ops, *src:UOp, **kwargs):
     out_dtype = (self, *src)[-1].dtype
     print(f"Creating(ALU) UOp(op={op}, dtype={out_dtype}, src={(self,)+src})")
