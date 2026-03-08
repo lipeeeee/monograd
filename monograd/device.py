@@ -1,7 +1,7 @@
 from __future__ import annotations
 import functools
-import pyopencl as cl
 import numpy as np
+import pyopencl as cl
 from enum import IntEnum, auto
 from monograd.dtype import DType
 from monograd.utils import flat_mv
@@ -35,7 +35,7 @@ class Buffer:
     else:
       assert base._base is None, "base can't have a base"
       assert device == base.device, f"base must have the same device {device} vs {base.device}"
-    if str(device) == "gpu": self.CL_CTX, self.CL_QUEUE = OpenCLContext.cl_ctx(), OpenCLContext.cl_queue()
+    if device is Device.GPU: self.CL_CTX, self.CL_QUEUE = OpenCLContext.cl_ctx(), OpenCLContext.cl_queue()
   @property
   def base(self) -> Buffer: return self._base if self._base is not None else self
   @property

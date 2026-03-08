@@ -28,9 +28,10 @@ class UOp(metaclass=UOpMetaClass):
 
   @property
   def device(self) -> Device:
+    if self.op is Ops.CAST: return self.arg
+    if self.op is Ops.COPY: return self.arg
     if self.op is Ops.CONST: return self.arg[1]
     if self.op is Ops.LOAD: return _uop_buffers[self].device
-    if self.op is Ops.COPY: return self.arg
     if self.op in GroupOp.Movement: return self.src[0].device
     if self.op in GroupOp.Binary: return self.arg
     if self.op in GroupOp.Unary: return self.arg
@@ -38,9 +39,10 @@ class UOp(metaclass=UOpMetaClass):
     raise NotImplementedError(f"unkown op {self.op} > {self} {self.src}")
   @property
   def shape(self) -> tuple:
+    if self.op is Ops.CAST: return self.src[0].shape
+    if self.op is Ops.COPY: return self.src[0].shape
     if self.op is Ops.CONST: return (1,)
     if self.op is Ops.LOAD: return self.arg
-    if self.op is Ops.COPY: return self.src[0].shape
     if self.op in GroupOp.Movement: return self.arg
     if self.op in GroupOp.Unary: return self.src[0].shape
     if self.op in GroupOp.Binary: return self.src[0].shape # NOTE: src[0] and src[1] should have the same shape?
@@ -57,7 +59,7 @@ class UOp(metaclass=UOpMetaClass):
     return ret
   def cast(self, dtype:DType) -> UOp:
     if self.dtype == dtype: return self # noop
-    return UOp(Ops.CAST, dtype, (self, ), self.device)
+    return UOp(Ops.CAST, dtype, (self,), self.device)
   def alu(self, op:Ops, *src:UOp, **kwargs):
     out_dtype = (self, *src)[-1].dtype
     print(f"Creating(ALU) UOp(op={op}, dtype={out_dtype}, src={(self,)+src})")
