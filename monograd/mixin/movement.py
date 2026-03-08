@@ -22,7 +22,7 @@ class MovementMixin:
 
   def _broadcast_to(self, new_shape:tuple) -> Self:
     if self.shape == new_shape: return self
-    assert self.ndim >= len(new_shape), f"cannot broadcast tensor to fewer dimensions tried {self.shape}->{new_shape}"
+    assert self.ndim <= len(new_shape), f"cannot broadcast tensor to fewer dimensions tried {self.shape}->{new_shape}"
     shape, _ = _align_left(self.shape, new_shape)
     # for each dimension, check either dim is 1, or it does not change
     assert all(s == ns or s == 1 for s, ns in zip(shape, new_shape)), "cannot broadcast {self.shape}->{new_shape}"

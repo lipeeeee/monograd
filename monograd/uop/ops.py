@@ -31,8 +31,9 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.CONST: return self.arg[1]
     if self.op is Ops.LOAD: return _uop_buffers[self].device
     if self.op is Ops.COPY: return self.arg
-    if self.op in GroupOp.Binary: return self.arg
     if self.op in GroupOp.Movement: return self.src[0].device
+    if self.op in GroupOp.Binary: return self.arg
+    if self.op in GroupOp.Unary: return self.arg
     if self.op in GroupOp.Reduce: return self.src[0].device
     raise NotImplementedError(f"unkown op {self.op} > {self} {self.src}")
   @property
@@ -41,6 +42,7 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.LOAD: return self.arg
     if self.op is Ops.COPY: return self.src[0].shape
     if self.op in GroupOp.Movement: return self.arg
+    if self.op in GroupOp.Unary: return self.src[0].shape
     if self.op in GroupOp.Binary: return self.src[0].shape # NOTE: src[0] and src[1] should have the same shape?
     if self.op in GroupOp.Reduce: return self.arg[1] # reduced shape
     raise NotImplementedError(f"unkown op {self.op} > {self}")

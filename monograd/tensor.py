@@ -10,7 +10,7 @@ import numpy as np
 class Tensor(OpMixin):
   def __init__(self, data: ConstType|UOp|list|tuple|np.ndarray|None, requires_grad:bool = True,
                device:DeviceLike = Device.CPU, dtype:DTypeLike|None = None, name:str|None = None):
-    _dtype = to_dtype(dtype) if dtype is not None else dtypes.default_int
+    _dtype = to_dtype(dtype) if dtype is not None else dtypes.default_float
     _device = to_device(device) if device is not Device.CPU else device
     del dtype, device
     self.grad:Tensor|None = None
@@ -25,7 +25,7 @@ class Tensor(OpMixin):
     elif isinstance(data, list|tuple|np.ndarray):
       buf = np.array(data)
       data = UOp(Ops.LOAD, _dtype, (), buf.shape)
-      data.assign_buffer(_device, len(buf), buf)
+      data.assign_buffer(_device, buf.size, buf)
     # elif isinstance(data, np.ndarray):
     #   pass
 
@@ -58,7 +58,6 @@ class Tensor(OpMixin):
     elif isinstance(axis, int): resolved_axis = (axis if axis >= 0 else axis + self.ndim,)
     elif isinstance(axis, tuple): resolved_axis = tuple(x if x >= 0 else x + self.ndim for x in axis)
     if self.ndim == 0: resolved_axis = () # 0D scalars
-    assert resolved_axis is not None, f"unable to resolve axis {axis}"
     # compute reduced shape & create op
     reduced_shape = tuple(1 if i in resolved_axis else s for i, s in enumerate(self.shape))
     ret = Tensor.__new__(Tensor)
