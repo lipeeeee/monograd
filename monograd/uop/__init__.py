@@ -8,12 +8,13 @@ class Ops(IntEnum):
 
   # Unary Ops
   NEG = auto(); RELU = auto(); LOG = auto(); EXP = auto()
-  SIN = auto(); SQRT = auto(); CAST = auto();
+  SIN = auto(); SQRT = auto(); CAST = auto(); DIV = auto()
     
   # Binary Ops
-  ADD = auto(); SUB = auto(); MUL = auto(); DIV = auto()
+  ADD = auto(); SUB = auto(); MUL = auto();
   MAX = auto(); POW = auto(); MOD = auto()
   OR = auto(); XOR = auto(); AND = auto()
+  MATMUL = auto()
 
   # Ternary Ops
   WHERE = auto(); MULACC = auto()
@@ -28,13 +29,13 @@ class Ops(IntEnum):
   def __repr__(self): return str(self)
 
 class GroupOp:
-  Unary = {Ops.SIN, Ops.SQRT, Ops.NEG, Ops.LOG, Ops.RELU, Ops.CAST}
-  Binary = {Ops.ADD, Ops.MUL, Ops.MAX, Ops.MOD, Ops.XOR, Ops.OR, Ops.AND, Ops.SUB, Ops.POW}
+  Unary = {Ops.SIN, Ops.SQRT, Ops.NEG, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP}
+  Binary = {Ops.ADD, Ops.MUL, Ops.MATMUL, Ops.MAX, Ops.MOD, Ops.XOR, Ops.OR, Ops.AND, Ops.SUB, Ops.POW, Ops.DIV}
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)
 
   Buffer = {Ops.LOAD, Ops.STORE, Ops.CONST}
-  Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE}
+  Movement = {Ops.RESHAPE, Ops.EXPAND}
   Reduce = {Ops.SUM}
 
   # BinaryOps where f(f(a,b),c) = f(a,f(b,c))

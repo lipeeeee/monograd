@@ -1,6 +1,4 @@
 # next
-- handle casting dtypes (and upcasting)
-- check jax docs
 
 
 # important

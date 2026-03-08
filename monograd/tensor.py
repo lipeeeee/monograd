@@ -56,6 +56,7 @@ class Tensor(OpMixin):
     if axis is None: resolved_axis = tuple(range(self.ndim))
     elif isinstance(axis, int): resolved_axis = (axis if axis >= 0 else axis + self.ndim,)
     elif isinstance(axis, tuple): resolved_axis = tuple(x if x >= 0 else x + self.ndim for x in axis)
+    else: raise ValueError(f"unsupported axis: {axis}")
     if self.ndim == 0: resolved_axis = () # 0D scalars
     # compute reduced shape & create op
     reduced_shape = tuple(1 if i in resolved_axis else s for i, s in enumerate(self.shape))
@@ -71,7 +72,7 @@ class Tensor(OpMixin):
     ret.uop = UOp(op, self.dtype, (self.uop,), arg)
     ret.requires_grad = self.requires_grad
     return ret
-  def _unop(self, op:Ops, arg:Any) -> Tensor:
+  def _unop(self, op:Ops) -> Tensor:
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
     return ret
@@ -96,7 +97,7 @@ class Tensor(OpMixin):
   def to(self, device:DeviceLike) -> Tensor: # NOTE does this handle changing the device of grad???     !!!
     if (device:=to_device(device)) == self.device: return self
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)
-    ret = Tensor(copy_device_uop, self.requires_grad, self.device, self.dtype)
+    ret = Tensor(copy_device_uop, self.requires_grad, dtype=self.dtype)
     return ret
   def __repr__(self):
     return f"<Tensor {self.uop} requires_grad={self.requires_grad}>"

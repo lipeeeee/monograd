@@ -64,11 +64,6 @@ class UOp(metaclass=UOpMetaClass):
     out_dtype = (self, *src)[-1].dtype
     print(f"Creating(ALU) UOp(op={op}, dtype={out_dtype}, src={(self,)+src})")
     return UOp(op, out_dtype, (self,)+src)
-  def __del__(self): 
-    try:
-      del _uop_buffers[self]
-      del UOpMetaClass.ucache[(self.op, self.dtype, self.src, self.arg)]
-    except (AttributeError, KeyError): pass
   def __hash__(self): return id(self) # NOTE: Not hashing this causes an exception, but im unsure if this will cause problems because of weakref
   def __repr__(self):
     return f"<UOp {self.op} dtype={self.dtype.name} arg={self.arg}>"
