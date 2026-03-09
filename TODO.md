@@ -1,6 +1,12 @@
 # next
 
 
+# optimization
+- gemm/matmul ops should be optimized pre-written kernels, with diferences on tiling based on nvidia/amd (32 for amd 64 for nvidia I think)
+- there is a lib called clblast that optimizes for every single gpu iteration. should use that for maximum perf gain
+- also pre-compiled kernels? maybe it doesn't result in any perf gain but still interesting
+
+
 # important
 - GlobalCounters for mem_used;global_ops;global_mem;kernel_count;
 - environmentalize/globalize data/ folder for downloding and caching (is it a good name?)
