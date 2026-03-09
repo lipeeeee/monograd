@@ -6,6 +6,8 @@
 - there is a lib called clblast that optimizes for every single gpu iteration. should use that for maximum perf gain
 - also pre-compiled kernels? maybe it doesn't result in any perf gain but still interesting
 
+- new op: V(vector)CONST, makes expand a noop, even if it has no cost(does it have cost or is EXPAND free/boundary?)
+
 
 # important
 - GlobalCounters for mem_used;global_ops;global_mem;kernel_count;
