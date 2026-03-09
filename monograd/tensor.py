@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any
+import functools
 from monograd.mixin import OpMixin
 from monograd.mixin.movement import _align_left
 from monograd.device import Device, DeviceLike, to_device
@@ -115,6 +115,7 @@ class Tensor(OpMixin):
   def __repr__(self):
     return f"<Tensor {self.uop} requires_grad={self.requires_grad}>"
 
+@functools.cache
 def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]: # this can probably be re-done for to support *shapes
   if s1 == s2: return s1, s1, s2
   pad1, pad2 = _align_left(s1, s2)
