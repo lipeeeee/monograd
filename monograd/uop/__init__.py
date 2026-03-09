@@ -3,7 +3,7 @@
 from enum import auto, IntEnum, Enum
 
 class Ops(IntEnum):
-  LOAD = auto(); STORE = auto(); CONST = auto()
+  LOAD = auto(); CONST = auto();
   COPY = auto();
 
   # Unary Ops
@@ -37,15 +37,8 @@ class GroupOp:
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)
 
-  Buffer = {Ops.LOAD, Ops.STORE, Ops.CONST}
   Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE}
   Reduce = {Ops.SUM}
   BLAS = {Ops.MATMUL, Ops.GEMM}
-
-  # BinaryOps where f(f(a,b),c) = f(a,f(b,c))
-  # Associative = {Ops.ADD, Ops.MUL, Ops.AND, Ops.OR, Ops.MAX}
-
-  # BinaryOps that satisfy f(x,x)=x see https://en.wikipedia.org/wiki/Idempotence
-  # Idempotent = {Ops.OR, Ops.AND, Ops.MAX}
 
   All = set(Ops)
