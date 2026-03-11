@@ -5,6 +5,7 @@ import weakref
 from monograd.device import Buffer, Device
 from monograd.dtype import DType, dtypes
 from monograd.uop import GroupOp, Ops
+from monograd.utils import DEBUG
 
 # only allow unique UOps
 class UOpMetaClass(type):

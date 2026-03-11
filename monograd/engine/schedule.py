@@ -6,8 +6,10 @@ from monograd.device import Device
 from monograd.dtype import DType
 from monograd.uop import GroupOp, Ops
 from monograd.uop.ops import UOp
+from monograd.utils import DEBUG
 
 def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
+  # computes strides[i] = strides[i-1] * shape[i-1]  |||| strides[len(shape) - 1] = 1
   if len(shape) == 0: return ()
   strides = [1] * len(shape)
   for i in range(len(shape) - 2, -1, -1):
@@ -41,7 +43,7 @@ class BufferRef:
   strides: tuple[int, ...]
 
   @staticmethod
-  def from_uop(uop:UOp) -> BufferRef: # Main job is to compute strides for a given input uop
+  def from_uop(uop:UOp) -> BufferRef: # Main job is to compute strides for a given root input uop
     movement_chain: list[UOp] = []
     cur = uop
     while cur.op in GroupOp.Movement:
@@ -58,14 +60,15 @@ class BufferRef:
         new_shape = op.shape
         strides = tuple(
           0 if old == 1 and new > 1 else st
-          for old, new, st in zip(shape, new_shape, strides)
-        )
+          for old, new, st in zip(shape, new_shape, strides))
         shape = new_shape 
       elif op.op is Ops.PERMUTE:
         order = op.arg
         shape = op.shape
         strides = tuple(strides[i] for i in order)
-    return BufferRef(cur, shape, strides)
+    ret = BufferRef(cur, shape, strides)
+    if DEBUG >= 4: print(f"BufferRef.from_uop creating reference: {ret}")
+    return ret
   def index_expr(self, gid:str, output_shape:tuple[int, ...]) -> str: # generates C index expr
     assert self.shape == output_shape, f"is this a bug? shape mismatch generating C index {self.shape} != {output_shape}"
     if is_scalar(self.uop, self.strides): return "0"
@@ -92,7 +95,7 @@ class BufferRef:
     if not terms: return "0"
     return " + ".join(terms)
   def __repr__(self):
-    return (f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})")
+    return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
 
 class TaskKind(IntEnum):
   ELEMENTWISE = auto(); REDUCE = auto(); BLAS = auto(); COPY = auto()

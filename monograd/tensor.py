@@ -1,12 +1,13 @@
 from __future__ import annotations
 import functools
+from monograd.utils import DEBUG 
 from monograd.mixin import OpMixin
 from monograd.mixin.movement import _align_left
 from monograd.device import Device, DeviceLike, to_device
 from monograd.dtype import ConstType, DType, DTypeLike, dtypes, most_upper_dtype, to_dtype
 from monograd.uop import Ops
 from monograd.uop.ops import UOp
-import numpy as np 
+import numpy as np
 
 class Tensor(OpMixin):
   def __init__(self, data: ConstType|UOp|list|tuple|np.ndarray|None, requires_grad:bool = True,
@@ -61,7 +62,9 @@ class Tensor(OpMixin):
     # compute reduced shape & create op
     reduced_shape = tuple(1 if i in resolved_axis else s for i, s in enumerate(self.shape))
     ret = Tensor.__new__(Tensor)
-    ret.uop = UOp(op, self.dtype, (self.uop,), arg=(resolved_axis, reduced_shape))
+    if DEBUG >= 1: print(f"_mop {resolved_axis}, {reduced_shape}") 
+    ret.uop = UOp(op, self.dtype, (self.uop,), (resolved_axis, reduced_shape))
+    ret.requires_grad = self.requires_grad
     # handle keepdim
     if not keepdim:
       final_shape = tuple(s for i, s in enumerate(self.shape) if i not in resolved_axis)
