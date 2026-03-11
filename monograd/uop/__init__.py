@@ -4,7 +4,7 @@ from enum import auto, IntEnum, Enum
 
 class Ops(IntEnum):
   LOAD = auto(); CONST = auto();
-  COPY = auto();
+  COPY = auto(); SINK = auto();
 
   # Unary Ops
   NEG = auto(); RELU = auto(); LOG = auto(); EXP = auto()

@@ -112,6 +112,9 @@ class Tensor(OpMixin):
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)
     ret = Tensor(copy_device_uop, self.requires_grad, dtype=self.dtype)
     return ret
+
+  @property
+  def T(self) -> Tensor: return self.transpose()
   def __repr__(self):
     return f"<Tensor {self.uop} requires_grad={self.requires_grad}>"
 

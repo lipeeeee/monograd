@@ -58,6 +58,7 @@ class UOp(metaclass=UOpMetaClass):
     ret.allocate(initial_value)
     _uop_buffers[self] = ret
     return ret
+  def has_buffer_assigned(self) -> bool: return hasattr(self, "_buf")
 
   # TODO: check if we can move more stuff to here, similar to .cast(), seems cleaner
   def cast(self, dtype:DType) -> UOp:
