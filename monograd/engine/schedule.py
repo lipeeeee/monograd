@@ -89,7 +89,7 @@ class BufferRef:
     # skip dims where stride is 0 (broadcast — contributes nothing)
     terms: list[str] = []
     for coord, stride in zip(coords, self.strides):
-      if stride == 0: continue            # broadcast dim, skip
+      if stride == 0: continue # broadcast dim, skip
       elif stride == 1: terms.append(coord)
       else: terms.append(f"{coord} * {stride}")
     if not terms: return "0"
