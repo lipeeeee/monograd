@@ -119,7 +119,7 @@ class Scheduler:
         self.scheduled_kernels.append(KernelTask(kind, [node], self._collect_inputs([node])))
     self._flush(TaskKind.ELEMENTWISE)  # flush any remaining ops
     return self.scheduled_kernels
-  def _flush(self, kind: TaskKind):
+  def _flush(self, kind:TaskKind):
     if not self._current_group: return
     self.scheduled_kernels.append(KernelTask(kind, self._current_group, self._collect_inputs(self._current_group)))
     self._current_group = []

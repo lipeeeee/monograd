@@ -1,4 +1,5 @@
 # next
+cleanup & re-read schedule.py / maybe dont need Scheduler class, seems overkill
 
 
 # optimization
