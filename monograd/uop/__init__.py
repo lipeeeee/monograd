@@ -37,6 +37,7 @@ class GroupOp:
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)
 
+  Input = {Ops.LOAD, Ops.CONST}
   Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE}
   Reduce = {Ops.SUM}
   BLAS = {Ops.MATMUL, Ops.GEMM}

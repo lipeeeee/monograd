@@ -1,4 +1,5 @@
 from __future__ import annotations
+import weakref
 from math import prod
 from enum import auto, IntEnum
 from dataclasses import dataclass
@@ -6,7 +7,7 @@ from monograd.device import Device
 from monograd.dtype import DType
 from monograd.uop import GroupOp, Ops
 from monograd.uop.ops import UOp
-from monograd.utils import DEBUG
+from monograd.utils import DEBUG, toposort
 
 def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
   # computes strides[i] = strides[i-1] * shape[i-1]  |||| strides[len(shape) - 1] = 1
@@ -36,6 +37,7 @@ class KernelTask: # what holds scheduled graph (list)
   @property
   def output_device(self) -> Device: return self.ops[-1].device
 
+_bufferref_cache: weakref.WeakKeyDictionary[UOp, BufferRef] = weakref.WeakKeyDictionary()
 @dataclass  
 class BufferRef:
   uop: UOp
@@ -44,6 +46,7 @@ class BufferRef:
 
   @staticmethod
   def from_uop(uop:UOp) -> BufferRef: # Main job is to compute strides for a given root input uop
+    if uop in _bufferref_cache: return _bufferref_cache[uop] 
     movement_chain: list[UOp] = []
     cur = uop
     while cur.op in GroupOp.Movement:
@@ -67,6 +70,7 @@ class BufferRef:
         shape = op.shape
         strides = tuple(strides[i] for i in order)
     ret = BufferRef(cur, shape, strides)
+    _bufferref_cache[uop] = ret # NOTE: is it `uop` or `cur` key?
     if DEBUG >= 4: print(f"BufferRef.from_uop creating reference: {ret}")
     return ret
   def index_expr(self, gid:str, output_shape:tuple[int, ...]) -> str: # generates C index expr
@@ -96,6 +100,42 @@ class BufferRef:
     return " + ".join(terms)
   def __repr__(self):
     return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
+
+class Scheduler:
+  scheduled_kernels: list[KernelTask]
+  def __init__(self):
+    self.scheduled_kernels: list[KernelTask] = []
+    self._current_group: list[UOp] = []
+  def run_scheduler(self, root:UOp) -> list[KernelTask]:
+    nodes = toposort(root, lambda u: u.src)
+    for node in nodes:
+      if node.op in GroupOp.Input:    continue
+      if node.op is Ops.SINK:         continue
+      if node.op in GroupOp.Movement: continue
+      elif is_fusable(node): self._current_group.append(node)
+      elif is_boundary(node):
+        self._flush(TaskKind.ELEMENTWISE)
+        kind = TaskKind.BLAS if node.op in GroupOp.BLAS else TaskKind.REDUCE if node.op in GroupOp.Reduce else TaskKind.COPY
+        self.scheduled_kernels.append(KernelTask(kind, [node], self._collect_inputs([node])))
+    self._flush(TaskKind.ELEMENTWISE)  # flush any remaining ops
+    return self.scheduled_kernels
+  def _flush(self, kind: TaskKind):
+    if not self._current_group: return
+    self.scheduled_kernels.append(KernelTask(kind, self._current_group, self._collect_inputs(self._current_group)))
+    self._current_group = []
+  def _collect_inputs(self, ops:list[UOp]) -> list[BufferRef]:
+    group_ids = {id(u) for u in ops}
+    seen: set[int] = set()
+    refs: list[BufferRef] = []
+    for op in ops:
+      for src in op.src:
+        if id(src) in seen: continue
+        ref = BufferRef.from_uop(src)
+        if ref.uop.op is Ops.CONST: continue   # inline, skip
+        if id(ref.uop) in group_ids: continue  # internal to group, skip
+        seen.add(id(src))
+        refs.append(ref)
+    return refs
 
 class TaskKind(IntEnum):
   ELEMENTWISE = auto(); REDUCE = auto(); BLAS = auto(); COPY = auto()

@@ -1,7 +1,9 @@
 from __future__ import annotations
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, Callable, ClassVar, Generic, TypeVar
 import numpy as np
 import os
+
+T = TypeVar("T")
 
 def flat_mv(mv:memoryview) -> memoryview: return mv if len(mv) == 0 else mv.cast("B", shape=(mv.nbytes,))
 def argfix(*x):
@@ -12,8 +14,6 @@ def argfix(*x):
 
 # **** Context/Env vars ****
 def getenv(key:str, default:Any=0): return type(default)(os.getenv(key, default))
-
-T = TypeVar("T")
 class ContextVar(Generic[T]):
   _cache: ClassVar[dict[str, ContextVar]] = {}
   value: T
@@ -32,6 +32,20 @@ class ContextVar(Generic[T]):
     return [getattr(obj, x) if obj else x for x in self.value.split(',') if x]
 
 DEBUG = ContextVar("DEBUG", 0)
+
+# **** generic toposort ****
+# usage:  toposort(uop, lambda u: u.src)
+#         toposort(tensor, lambda t: t.src)
+def toposort(root:T, get_children:Callable[[T], tuple[T, ...]]) -> list[T]:
+  visited: set[int] = set()
+  order: list[T] = []
+  def dfs(node:T):
+    if id(node) in visited: return
+    visited.add(id(node))
+    for child in get_children(node): dfs(child)
+    order.append(node)
+  dfs(root)
+  return order
 
 #### 
 DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("true", "1", "t")
