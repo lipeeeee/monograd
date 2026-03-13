@@ -62,7 +62,6 @@ class Tensor(OpMixin):
     # compute reduced shape & create op
     reduced_shape = tuple(1 if i in resolved_axis else s for i, s in enumerate(self.shape))
     ret = Tensor.__new__(Tensor)
-    if DEBUG >= 1: print(f"_mop {resolved_axis}, {reduced_shape}") 
     ret.uop = UOp(op, self.dtype, (self.uop,), (resolved_axis, reduced_shape))
     ret.requires_grad = self.requires_grad
     # handle keepdim

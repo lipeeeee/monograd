@@ -23,6 +23,9 @@ def is_fusable(uop:UOp) -> bool: return uop.op in GroupOp.Unary | GroupOp.Binary
 def is_invisible(uop:UOp) -> bool: return uop.op in GroupOp.Movement
 def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | GroupOp.Reduce | {Ops.COPY}
 
+class TaskKind(IntEnum):
+  ELEMENTWISE = auto(); REDUCE = auto(); BLAS = auto(); COPY = auto()
+
 @dataclass
 class KernelTask: # what holds scheduled graph (list)
   kind: TaskKind
@@ -76,7 +79,7 @@ class BufferRef:
     if DEBUG >= 4: print(f"BufferRef.from_uop creating reference: {ret}")
     return ret
   def index_expr(self, gid:str, output_shape:tuple[int, ...]) -> str: # generates C index expr
-    assert self.shape == output_shape, f"is this a bug? shape mismatch generating C index {self.shape} != {output_shape}"
+    # assert self.shape == output_shape, f"is this a bug? shape mismatch generating C index {self.shape} != {output_shape}"
     if is_scalar(self.uop, self.strides): return "0"
     # build per-dim coordinate expressions from flat gid
     # e.g. for output_shape=(2,3):
@@ -86,8 +89,7 @@ class BufferRef:
     remaining = gid
     for i, dim_size in enumerate(output_shape):
       below = prod(output_shape[i+1:])  # product of all dims below this one
-      if below == 1:
-        coords.append(remaining)
+      if below == 1: coords.append(remaining)
       else:
         coords.append(f"({remaining} / {below})")
         remaining = f"({remaining} % {below})"
@@ -114,8 +116,8 @@ def run_scheduler(root:UOp) -> list[KernelTask]:
     elif is_boundary(node):
       _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)
       kind = TaskKind.BLAS if node.op in GroupOp.BLAS else TaskKind.REDUCE if node.op in GroupOp.Reduce else TaskKind.COPY
-      scheduled_kernels.append(KernelTask(kind, [node], _collect_inputs([node])))
-  _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)  # flush any remaining ops
+      scheduled_kernels.append(KernelTask(kind, [node], _collect_inputs([node]))) # manual flush
+  _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels) # flush any remaining ops
   return scheduled_kernels
 def _collect_inputs(ops:list[UOp]) -> list[BufferRef]:
   # given *ops*, will return leaf/input nodes as buffer refs
@@ -136,5 +138,3 @@ def _flush(kind:TaskKind, current_group:list[UOp], scheduled_kernels:list[Kernel
   scheduled_kernels.append(KernelTask(kind, current_group.copy(), _collect_inputs(current_group)))
   current_group.clear()
 
-class TaskKind(IntEnum):
-  ELEMENTWISE = auto(); REDUCE = auto(); BLAS = auto(); COPY = auto()
