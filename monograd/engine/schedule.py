@@ -21,7 +21,7 @@ def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
 def is_scalar(uop:UOp , strides=(1,)) -> bool: return uop.op is Ops.CONST or all(s == 0 for s in strides)
 def is_fusable(uop:UOp) -> bool: return uop.op in GroupOp.Unary | GroupOp.Binary # NOTE: Not checking CAST because it is in Unary
 def is_invisible(uop:UOp) -> bool: return uop.op in GroupOp.Movement
-def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | {Ops.COPY}
+def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | GroupOp.Reduce | {Ops.COPY}
 
 @dataclass
 class KernelTask: # what holds scheduled graph (list)
@@ -46,6 +46,8 @@ class BufferRef:
 
   @staticmethod
   def from_uop(uop:UOp) -> BufferRef: # Main job is to compute strides for a given root input uop
+    # given MUL op will return itself as a BufferRef
+    # given Movement op will compute strides until leaf uop, returning leaf with correct strides
     if uop in _bufferref_cache: return _bufferref_cache[uop] 
     movement_chain: list[UOp] = []
     cur = uop
@@ -70,7 +72,7 @@ class BufferRef:
         shape = op.shape
         strides = tuple(strides[i] for i in order)
     ret = BufferRef(cur, shape, strides)
-    _bufferref_cache[uop] = ret # NOTE: is it `uop` or `cur` key?
+    _bufferref_cache[uop] = ret
     if DEBUG >= 4: print(f"BufferRef.from_uop creating reference: {ret}")
     return ret
   def index_expr(self, gid:str, output_shape:tuple[int, ...]) -> str: # generates C index expr
@@ -101,41 +103,38 @@ class BufferRef:
   def __repr__(self):
     return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
 
-class Scheduler:
-  scheduled_kernels: list[KernelTask]
-  def __init__(self):
-    self.scheduled_kernels: list[KernelTask] = []
-    self._current_group: list[UOp] = []
-  def run_scheduler(self, root:UOp) -> list[KernelTask]:
-    nodes = toposort(root, lambda u: u.src)
-    for node in nodes:
-      if node.op in GroupOp.Input:    continue
-      if node.op is Ops.SINK:         continue
-      if node.op in GroupOp.Movement: continue
-      elif is_fusable(node): self._current_group.append(node)
-      elif is_boundary(node):
-        self._flush(TaskKind.ELEMENTWISE)
-        kind = TaskKind.BLAS if node.op in GroupOp.BLAS else TaskKind.REDUCE if node.op in GroupOp.Reduce else TaskKind.COPY
-        self.scheduled_kernels.append(KernelTask(kind, [node], self._collect_inputs([node])))
-    self._flush(TaskKind.ELEMENTWISE)  # flush any remaining ops
-    return self.scheduled_kernels
-  def _flush(self, kind:TaskKind):
-    if not self._current_group: return
-    self.scheduled_kernels.append(KernelTask(kind, self._current_group, self._collect_inputs(self._current_group)))
-    self._current_group = []
-  def _collect_inputs(self, ops:list[UOp]) -> list[BufferRef]:
-    group_ids = {id(u) for u in ops}
-    seen: set[int] = set()
-    refs: list[BufferRef] = []
-    for op in ops:
-      for src in op.src:
-        if id(src) in seen: continue
-        ref = BufferRef.from_uop(src)
-        if ref.uop.op is Ops.CONST: continue   # inline, skip
-        if id(ref.uop) in group_ids: continue  # internal to group, skip
-        seen.add(id(src))
-        refs.append(ref)
-    return refs
+# **** main scheduler compute ****
+def run_scheduler(root:UOp) -> list[KernelTask]:
+  nodes = toposort(root, lambda u: u.src)
+  current_group: list[UOp] = []
+  scheduled_kernels: list[KernelTask] = []
+  for node in nodes:
+    if node.op in GroupOp.Input | GroupOp.Movement | {Ops.SINK}: continue # invisible/free ops
+    elif is_fusable(node): current_group.append(node)
+    elif is_boundary(node):
+      _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)
+      kind = TaskKind.BLAS if node.op in GroupOp.BLAS else TaskKind.REDUCE if node.op in GroupOp.Reduce else TaskKind.COPY
+      scheduled_kernels.append(KernelTask(kind, [node], _collect_inputs([node])))
+  _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)  # flush any remaining ops
+  return scheduled_kernels
+def _collect_inputs(ops:list[UOp]) -> list[BufferRef]:
+  # given *ops*, will return leaf/input nodes as buffer refs
+  group_ids = {id(u) for u in ops}
+  seen: set[int] = set()
+  refs: list[BufferRef] = []
+  for op in ops:
+    for src in op.src:
+      if id(src) in seen: continue
+      ref = BufferRef.from_uop(src)
+      if ref.uop.op is Ops.CONST: continue   # inline, skip
+      if id(ref.uop) in group_ids: continue  # internal to group, skip
+      seen.add(id(src))
+      refs.append(ref)
+  return refs
+def _flush(kind:TaskKind, current_group:list[UOp], scheduled_kernels:list[KernelTask]):
+  if not current_group: return
+  scheduled_kernels.append(KernelTask(kind, current_group.copy(), _collect_inputs(current_group)))
+  current_group.clear()
 
 class TaskKind(IntEnum):
   ELEMENTWISE = auto(); REDUCE = auto(); BLAS = auto(); COPY = auto()
