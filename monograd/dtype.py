@@ -41,18 +41,18 @@ class dtypes:
   @functools.cache
   def is_unsigned(x: DType) -> bool: return x in dtypes.uints
   @staticmethod
-  def is_bool(x: DType) -> bool: return x == dtypes.bool
+  def is_bool(x: DType) -> bool: return x is dtypes.bool
   @staticmethod
   @functools.cache
   def min(dtype: DType):
-    if dtypes.is_int(dtype): return 0 if dtypes.is_unsigned(dtype) else -2 ** (dtype.bitsize-1)
+    if dtypes.is_int(dtype): return 0 if dtypes.is_unsigned(dtype) else -2 ** (dtype.bitsize - 1)
     if dtypes.is_float(dtype): return -float("inf")
     if dtypes.is_bool(dtype): return False
     raise RuntimeError(f"Could not infer min of dtype {dtype.name}")
   @staticmethod
   @functools.cache
   def max(dtype: DType):
-    if dtypes.is_int(dtype): return 2 ** (dtype.bitsize-1) + dtypes.min(dtype)
+    if dtypes.is_int(dtype): return 2 ** (dtype.bitsize) - 1 + dtypes.min(dtype)
     if dtypes.is_float(dtype): return float("inf")
     if dtypes.is_bool(dtype): return True
     raise RuntimeError(f"Could not infer max of dtype {dtype.name}")
