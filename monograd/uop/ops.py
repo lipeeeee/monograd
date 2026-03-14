@@ -51,7 +51,7 @@ class UOp(metaclass=UOpMetaClass):
     raise NotImplementedError(f"unkown op {self.op} > {self}")
 
   @property
-  def buffer(self) -> Buffer: return _uop_buffers[self]
+  def buffer(self) -> Buffer: return _uop_buffers[self] # NOTE: will raise KeyError, make try_buffer() -> Buffer|None if needed
   def assign_buffer(self, device:Device, size:int, initial_value=None) -> Buffer:
     assert self.op in GroupOp.All, f"op {self.op} can't have a buffer attatched" # TODO: limit what ops can get buffr
     if (dret:=_uop_buffers.get(self, None)) is not None: return dret
@@ -59,7 +59,6 @@ class UOp(metaclass=UOpMetaClass):
     ret.allocate(initial_value)
     _uop_buffers[self] = ret
     return ret
-  def has_buffer_assigned(self) -> bool: return hasattr(self, "_buf")
 
   # TODO: check if we can move more stuff to here, similar to .cast(), seems cleaner
   def cast(self, dtype:DType) -> UOp:

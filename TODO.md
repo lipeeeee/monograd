@@ -1,4 +1,5 @@
 # next
+- github actions run pytest
 - setup test env with pytest
 - re-read schedule.py
 
