@@ -31,7 +31,10 @@ class ContextVar(Generic[T]):
     assert isinstance(self.value, str)
     return [getattr(obj, x) if obj else x for x in self.value.split(',') if x]
 
-DEBUG = ContextVar("DEBUG", 0)
+DEBUG = ContextVar("DEBUG", 0); 
+# testing vars
+TEST_GPU = ContextVar("TEST_GPU", 1)
+
 
 # **** generic toposort ****
 # usage:  toposort(uop, lambda u: u.src)

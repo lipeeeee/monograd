@@ -49,7 +49,7 @@ class Buffer:
       self._buf = self.base._buf # NOTE: idk about this because self might have an offset and not fit base _buf.size
       return self
     if self.device == Device.CPU:
-      if initial_value is not None: self._buf = np.array(initial_value, dtype=self.dtype.np_dtype)
+      if initial_value is not None: self._buf = np.ascontiguousarray(initial_value, dtype=self.dtype.np_dtype).flatten()
       else: self._buf = np.empty(self.nbytes, dtype=np.uint8)
     elif self.device == Device.GPU:
       if initial_value is not None:
@@ -67,7 +67,7 @@ class Buffer:
       dest_view = self._buf.view(np.uint8)[byte_offset:byte_offset+self.nbytes]
       np.copyto(dest_view, np.frombuffer(mv, dtype=np.uint8))
     elif self.device == Device.GPU:
-      cl.enqueue_copy(self.CL_QUEUE, self._buf, mv, device_offset=byte_offset, is_blocking=True) # pyright: ignore
+      cl.enqueue_copy(self.CL_QUEUE, self._buf, mv, dst_offset=byte_offset, is_blocking=True) # pyright: ignore
   def copyout(self, mv: memoryview) -> memoryview: # Copy from this buffer to *mv*
     assert self.is_allocated(), "buffer should be allocated in order to do copy ops"
     mv = flat_mv(memoryview(mv))
@@ -76,7 +76,7 @@ class Buffer:
       src_view = self._buf.view(np.uint8)[byte_offset:byte_offset+self.nbytes]
       np.copyto(np.frombuffer(mv, dtype=np.uint8), src_view)
     elif self.device == Device.GPU:
-      cl.enqueue_copy(self.CL_QUEUE, mv, self._buf, device_offset=byte_offset, is_blocking=True) # pyright: ignore
+      cl.enqueue_copy(self.CL_QUEUE, mv, self._buf, src_offset=byte_offset, is_blocking=True) # pyright: ignore
     assert isinstance(mv, memoryview), f"this didn't work as expected: mv({mv}) is type {type(mv)}, need to convert to type memoryview"
     return mv
   def as_buffer(self) -> memoryview: return self.copyout(memoryview(np.empty(self.size, dtype=self.dtype.np_dtype)))
