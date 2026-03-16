@@ -17,8 +17,8 @@ GPU = Device.GPU
 
 def make_load(shape:tuple, dtype=F32, device=CPU) -> UOp:
   """LOAD UOp with an allocated buffer."""
-  u = UOp(Ops.LOAD, dtype, (), shape)
-  u.assign_buffer(device, int(np.prod(shape)))
+  u = UOp(Ops.LOAD, dtype, (), (shape, device))
+  u.assign_buffer(int(np.prod(shape)))
   return u
 
 def make_const(val, dtype=F32, device=CPU) -> UOp:
@@ -172,37 +172,37 @@ class TestUOpDevice(unittest.TestCase):
 # **** .assign_buffer / .buffer / .has_buffer_assigned ****
 class TestUOpBuffer(unittest.TestCase):
   def test_assign_buffer_allocates(self):
-    u   = UOp(Ops.LOAD, F32, (), (4,))
-    buf = u.assign_buffer(CPU, 4)
+    u   = UOp(Ops.LOAD, F32, (), ((4,), CPU))
+    buf = u.assign_buffer(4)
     self.assertIsInstance(buf, Buffer)
     self.assertTrue(buf.is_allocated())
 
   def test_assign_buffer_idempotent(self):
-    u    = UOp(Ops.LOAD, F32, (), (4,))
-    buf1 = u.assign_buffer(CPU, 4)
-    buf2 = u.assign_buffer(CPU, 4)
+    u    = UOp(Ops.LOAD, F32, (), ((4,), CPU))
+    buf1 = u.assign_buffer(4)
+    buf2 = u.assign_buffer(4)
     self.assertIs(buf1, buf2)
 
   def test_buffer_property_returns_assigned(self):
-    u   = UOp(Ops.LOAD, F32, (), (4,))
-    buf = u.assign_buffer(CPU, 4)
+    u   = UOp(Ops.LOAD, F32, (), ((4,), CPU))
+    buf = u.assign_buffer(4)
     self.assertIs(u.buffer, buf)
 
   def test_buffer_stored_in_weak_dict(self):
-    u = UOp(Ops.LOAD, F32, (), (4,))
-    u.assign_buffer(CPU, 4)
+    u = UOp(Ops.LOAD, F32, (), ((4,), CPU))
+    u.assign_buffer(4)
     self.assertIn(u, _uop_buffers)
 
   def test_assign_buffer_with_initial_value(self):
-    u   = UOp(Ops.LOAD, F32, (), (4,))
+    u   = UOp(Ops.LOAD, F32, (), ((4,), CPU))
     arr = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
-    buf = u.assign_buffer(CPU, 4, arr)
+    buf = u.assign_buffer(4, arr)
     out = memoryview(np.empty(4, dtype=np.float32))
     buf.copyout(out)
     np.testing.assert_array_equal(np.frombuffer(out, dtype=np.float32), arr)
 
   def test_buffer_property_raises_without_assignment(self):
-    u = UOp(Ops.LOAD, F32, (), (999,))
+    u = UOp(Ops.LOAD, F32, (), ((999,), CPU))
     with self.assertRaises(KeyError):
       _ = u.buffer
 

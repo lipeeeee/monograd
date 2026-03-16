@@ -26,8 +26,8 @@ class Tensor(OpMixin):
       data = UOp(Ops.CONST, _dtype, (), (data, _device))
     elif isinstance(data, list|tuple|np.ndarray):
       buf = np.array(data)
-      data = UOp(Ops.LOAD, _dtype, (), buf.shape)
-      data.assign_buffer(_device, buf.size, buf)
+      data = UOp(Ops.LOAD, _dtype, (), (buf.shape, _device))
+      data.assign_buffer(buf.size, buf)
 
     # atp, data NEEDS to be a UOp
     assert isinstance(data, UOp), f"couldn't create Tensor from {data} with type {(type(data))}"
@@ -116,7 +116,7 @@ class Tensor(OpMixin):
     return ret
 
   @property
-  def T(self) -> Tensor: return self.transpose()
+  def T(self) -> Tensor: return self.permute(tuple(range(self.ndim - 1, -1, -1))) # reverses all axis
   def __repr__(self):
     return f"<Tensor {self.uop} requires_grad={self.requires_grad}>"
 

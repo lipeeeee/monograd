@@ -46,7 +46,7 @@ class MovementMixin:
     assert len(order) == self.ndim, f"permute order must match ndim {len(order)}vs{self.ndim}"
     assert sorted(order) == list(range(self.ndim)), "permute order must be a valid axis permutation"
     return self._mop(Ops.PERMUTE, order)
-  def transpose(self, ax1: int = -1, ax2: int = -1) -> Self:
+  def transpose(self, ax1:int=1, ax2:int=0) -> Self:
     order = list(range(self.ndim))
     order[ax1], order[ax2] = order[ax2], order[ax1]
     return self.permute(tuple(order))

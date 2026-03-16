@@ -1,5 +1,6 @@
 # Coverage for monograd/device.py: Device, to_device, Buffer (CPU + GPU)
 # Run GPU tests with: TEST_GPU=1 pytest tests/test_device.py -v
+# NOTE: opencl context creation should be handled 'PYOPENCL_CTX' to avoid prompts
 import unittest
 import numpy as np
 from monograd.device import Buffer, Device, to_device, OpenCLContext
@@ -264,7 +265,6 @@ class TestBufferGPU(BufferTests, unittest.TestCase):
 
   def test_gpu_has_opencl_context(self):
     """GPU buffer must release cl.Buffer on deletion"""
-    import pyopencl as cl
     buf = Buffer(Device.GPU, 4, dtypes.float32)
     self.assertTrue(hasattr(buf, "CL_CTX"))
     self.assertTrue(hasattr(buf, "CL_QUEUE"))

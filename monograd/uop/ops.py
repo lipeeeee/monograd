@@ -29,7 +29,7 @@ class UOp(metaclass=UOpMetaClass):
 
   @property
   def device(self) -> Device:
-    if self.op is Ops.LOAD: return _uop_buffers[self].device
+    if self.op is Ops.LOAD: return self.arg[1] # _uop_buffers[self].device
     if self.op is Ops.CONST: return self.arg[1]
     if self.op is Ops.CAST: return self.arg
     if self.op is Ops.COPY: return self.arg
@@ -40,7 +40,7 @@ class UOp(metaclass=UOpMetaClass):
     raise NotImplementedError(f"unkown op {self.op} > {self} {self.src}")
   @property
   def shape(self) -> tuple:
-    if self.op is Ops.LOAD: return self.arg
+    if self.op is Ops.LOAD: return self.arg[0]
     if self.op is Ops.CONST: return (1,)
     if self.op is Ops.COPY: return self.src[0].shape
     if self.op is Ops.PERMUTE: return tuple(self.src[0].shape[i] for i in self.arg) # permuted shape
@@ -52,10 +52,10 @@ class UOp(metaclass=UOpMetaClass):
 
   @property
   def buffer(self) -> Buffer: return _uop_buffers[self] # NOTE: will raise KeyError, make try_buffer() -> Buffer|None if needed
-  def assign_buffer(self, device:Device, size:int, initial_value=None) -> Buffer:
+  def assign_buffer(self, size:int, initial_value=None) -> Buffer:
     assert self.op in GroupOp.All, f"op {self.op} can't have a buffer attatched" # TODO: limit what ops can get buffr
     if (dret:=_uop_buffers.get(self, None)) is not None: return dret
-    ret = Buffer(device, size, self.dtype)
+    ret = Buffer(self.device, size, self.dtype)
     ret.allocate(initial_value)
     _uop_buffers[self] = ret
     return ret

@@ -29,6 +29,7 @@ class DType(metaclass=DTypeMetaClass):
   def itemsize(self) -> int: return (self.bitsize + 7) // 8
   @property
   def np_dtype(self) -> np.dtype: return to_np_dtype(self)
+  def __repr__(self) -> str: return self.name + str(self.bitsize)
 
 class dtypes:
   @staticmethod
@@ -95,7 +96,7 @@ class dtypes:
 @functools.cache
 def to_np_dtype(dtype:DType) -> np.dtype: return np.dtype(dtype.fmt)
 @functools.cache
-def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower())
+def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower()) # NOTE: needs to support np dtypes
 @functools.cache
 def most_upper_dtype(*dtypes:DType) -> DType: return max(dtypes, key=lambda dt: dt.priority)
 
