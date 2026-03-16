@@ -98,6 +98,13 @@ def to_np_dtype(dtype:DType) -> np.dtype: return np.dtype(dtype.fmt)
 @functools.cache
 def to_dtype(dtype:DTypeLike) -> DType: return dtype if isinstance(dtype, DType) else getattr(dtypes, dtype.lower()) # NOTE: needs to support np dtypes
 @functools.cache
+def from_np_dtype(np_dtype) -> DType:
+  np_dtype = np.dtype(np_dtype)  # normalize — accepts np.float32, 'float32', np.dtype('float32')
+  for dt in dtypes.all:
+    if dt.fmt is None: continue
+    if np.dtype(dt.fmt) == np_dtype: return dt
+  raise TypeError(f"no DType mapping for numpy dtype {np_dtype}")
+@functools.cache
 def most_upper_dtype(*dtypes:DType) -> DType: return max(dtypes, key=lambda dt: dt.priority)
 
 ConstType = int|float|bool

@@ -14,7 +14,7 @@
 - constant folding
 - MUL+ADD = MULACC
 - new op: V(vector)CONST, makes expand a noop, even if it has no cost(does it have cost or is EXPAND free/boundary?)
-- .to() creates COPY OP before realize, it should be a NOOP
+- .to() creates COPY OP before realize, it should be a NOOP, maybe not.
 
 
 # important

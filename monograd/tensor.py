@@ -4,7 +4,7 @@ from monograd.utils import DEBUG
 from monograd.mixin import OpMixin
 from monograd.mixin.movement import _align_left
 from monograd.device import Device, DeviceLike, to_device
-from monograd.dtype import ConstType, DType, DTypeLike, dtypes, most_upper_dtype, to_dtype
+from monograd.dtype import ConstType, DType, DTypeLike, dtypes, from_np_dtype, most_upper_dtype, to_dtype
 from monograd.uop import Ops
 from monograd.uop.ops import UOp
 import numpy as np
@@ -12,7 +12,8 @@ import numpy as np
 class Tensor(OpMixin):
   def __init__(self, data: ConstType|UOp|list|tuple|np.ndarray|None, requires_grad:bool = True,
                device:DeviceLike = Device.CPU, dtype:DTypeLike|None = None, name:str|None = None):
-    _dtype = to_dtype(dtype) if dtype is not None else dtypes.default_float
+    if dtype is None and isinstance(data, np.ndarray): _dtype = from_np_dtype(data.dtype)
+    else: _dtype = to_dtype(dtype) if dtype is not None else dtypes.default_float
     _device = to_device(device) if device is not Device.CPU else device
     del dtype, device
     self.grad:Tensor|None = None
