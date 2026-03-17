@@ -1,10 +1,9 @@
 # next
-- IMPORTANT: if `data` comes as ndarray, we need to compute the dtype given that ndarray 
 - document contextvars/envvars
 - github actions run pytest
 - setup test env with pytest
-- support np dtypes in to_dtype
 - re-read schedule.py
+- support np dtypes in to_dtype
 
 
 # optimization

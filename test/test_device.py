@@ -126,11 +126,11 @@ class BufferTests(unittest.TestCase):
     np.testing.assert_array_equal(np.frombuffer(out, dtype=np.bool_), data)
 
   def test_copyin_copyout_int8(self):
-    data = np.array([-128, -1, 0, 1, 127], dtype=np.int8)
-    buf  = Buffer(self.device, 5, dtypes.int8)
+    data = np.array([-128, -1, 0, 1, 127, 64, -64, 32], dtype=np.int8)
+    buf  = Buffer(self.device, 8, dtypes.int8)
     buf.allocate()
     buf.copyin(memoryview(data))
-    out = memoryview(np.empty(5, dtype=np.int8))
+    out = memoryview(np.empty(8, dtype=np.int8))
     buf.copyout(out)
     np.testing.assert_array_equal(np.frombuffer(out, dtype=np.int8), data)
 

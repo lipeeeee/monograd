@@ -171,6 +171,11 @@ class TestUOpDevice(unittest.TestCase):
 
 # **** .assign_buffer / .buffer / .has_buffer_assigned ****
 class TestUOpBuffer(unittest.TestCase):
+  def tearDown(self):
+    # clear buffer cache after each test
+    _uop_buffers.clear()
+    UOpMetaClass.ucache.clear()
+
   def test_assign_buffer_allocates(self):
     u   = UOp(Ops.LOAD, F32, (), ((4,), CPU))
     buf = u.assign_buffer(4)
