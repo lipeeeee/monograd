@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  test-cpu:
+    name: Tests (CPU only)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ocl-icd (OpenCL runtime — needed for pyopencl import even in CPU-only mode)
+        run: sudo apt-get install -y ocl-icd-opencl-dev pocl-opencl-icd
+
+      - name: Install dependencies from pyproject.toml
+        run: pip install -e ".[dev]" || pip install -e .
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run tests (CPU only, no GPU)
+        env:
+          PYTHONPATH: .
+          TEST_GPU: "0"
+          PYOPENCL_CTX: "0"
+        run: pytest test/ -v --tb=short
+
+  test-gpu:
+    name: Tests (GPU)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install OpenCL runtime
+        run: sudo apt-get install -y ocl-icd-opencl-dev pocl-opencl-icd
+
+      - name: Install dependencies from pyproject.toml
+        run: pip install -e ".[dev]" || pip install -e .
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run tests (GPU enabled)
+        env:
+          PYTHONPATH: .
+          TEST_GPU: "1"
+          PYOPENCL_CTX: "0"
+        run: pytest test/ -v --tb=short
