@@ -73,7 +73,6 @@ class Buffer:
     mv = flat_mv(memoryview(mv))
     byte_offset = self.offset * self.dtype.itemsize
     if self.device == Device.CPU:
-      print(self._buf.view(np.float32))
       src_view = self._buf.view(np.uint8)[byte_offset:byte_offset+self.nbytes]
       np.copyto(np.frombuffer(mv, dtype=np.uint8), src_view)
     elif self.device == Device.GPU:

@@ -40,6 +40,16 @@ class KernelTask: # what holds scheduled graph (list)
   @property
   def output_device(self) -> Device: return self.ops[-1].device
 
+  def __repr__(self) -> str:
+    op_chain = " → ".join(o.op.name for o in self.ops)
+    inputs_str = "\n".join(f"    {ref}" for ref in self.inputs)
+    return (
+      f"KernelTask({self.kind.name})\n"
+      f"  ops    : {op_chain}\n"
+      f"  output : shape={self.output_shape} dtype={self.output_dtype} device={self.output_device}\n"
+      f"  inputs ({len(self.inputs)}):\n{inputs_str}"
+    )
+
 _bufferref_cache: weakref.WeakKeyDictionary[UOp, BufferRef] = weakref.WeakKeyDictionary()
 @dataclass  
 class BufferRef:
@@ -79,7 +89,7 @@ class BufferRef:
     if DEBUG >= 4: print(f"BufferRef.from_uop creating reference: {ret}")
     return ret
   def index_expr(self, gid:str, output_shape:tuple[int, ...]) -> str: # generates C index expr
-    # assert self.shape == output_shape, f"is this a bug? shape mismatch generating C index {self.shape} != {output_shape}"
+    assert self.shape == output_shape, f"is this a bug? shape mismatch generating C index {self.shape} != {output_shape}"
     if is_scalar(self.uop, self.strides): return "0"
     # build per-dim coordinate expressions from flat gid
     # e.g. for output_shape=(2,3):
@@ -138,3 +148,9 @@ def _flush(kind:TaskKind, current_group:list[UOp], scheduled_kernels:list[Kernel
   scheduled_kernels.append(KernelTask(kind, current_group.copy(), _collect_inputs(current_group)))
   current_group.clear()
 
+def pprint_schedule(tasks:list[KernelTask]) -> None:
+  print(f"Schedule: {len(tasks)} kernel(s)")
+  print("─" * 50)
+  for i, task in enumerate(tasks):
+    print(f"[{i}] {task}")
+    print("─" * 50)

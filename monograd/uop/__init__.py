@@ -26,20 +26,20 @@ class Ops(IntEnum):
   RESHAPE = auto(); EXPAND = auto(); PERMUTE = auto()
 
   # Reduce ops
-  SUM = auto();
+  SUM = auto(); REDUCEMAX = auto()
 
   def __str__(self): return Enum.__str__(self)
   def __repr__(self): return str(self)
 
 class GroupOp:
   Unary = {Ops.SIN, Ops.SQRT, Ops.NEG, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP}
-  Binary = {Ops.ADD, Ops.MUL, Ops.MATMUL, Ops.MAX, Ops.MOD, Ops.XOR, Ops.OR, Ops.AND, Ops.SUB, Ops.POW, Ops.DIV}
+  Binary = {Ops.ADD, Ops.MUL, Ops.MOD, Ops.MAX, Ops.XOR, Ops.OR, Ops.AND, Ops.SUB, Ops.POW, Ops.DIV}
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)
 
   Input = {Ops.LOAD, Ops.CONST}
   Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE}
-  Reduce = {Ops.SUM}
+  Reduce = {Ops.SUM, Ops.REDUCEMAX}
   BLAS = {Ops.MATMUL, Ops.GEMM}
 
   All = set(Ops)

@@ -299,7 +299,8 @@ class TestGroupOpMembership(unittest.TestCase):
       self.assertIn(op, GroupOp.Movement, f"{op} should be in Movement")
 
   def test_reduce_ops(self):
-    self.assertIn(Ops.SUM, GroupOp.Reduce)
+    for op in (Ops.SUM, Ops.REDUCEMAX):
+      self.assertIn(op, GroupOp.Reduce, f"{op} should be in Reduce")
 
   def test_blas_ops(self):
     self.assertIn(Ops.MATMUL, GroupOp.BLAS)
