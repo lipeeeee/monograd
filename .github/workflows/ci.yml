@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-cpu:
-    name: Tests (CPU only)
+    name: Tests (CPU)
     runs-on: ubuntu-latest
 
     steps:
