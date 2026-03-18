@@ -310,7 +310,7 @@ class TestIndexExpr(unittest.TestCase):
     c   = const(2.0)
     ref = BufferRef.from_uop(c)
     # after broadcast: is_scalar catches CONST
-    self.assertEqual(ref.index_expr("gid", (1,)), "0")
+    self.assertEqual(ref.index_expr("gid", ()), "0")
 
   def test_fully_broadcast_returns_zero(self):
     a   = load((1,))

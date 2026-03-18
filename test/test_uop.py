@@ -60,8 +60,8 @@ class TestUOpShape(unittest.TestCase):
   def test_load_1d(self):
     self.assertEqual(make_load((8,)).shape, (8,))
 
-  def test_const_shape_always_1(self):
-    self.assertEqual(make_const(2.0).shape, (1,))
+  def test_const_shape_always_scalar(self):
+    self.assertEqual(make_const(2.0).shape, ())
 
   def test_copy_inherits_src_shape(self):
     src = make_load((2, 3))

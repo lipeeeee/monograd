@@ -41,7 +41,7 @@ class UOp(metaclass=UOpMetaClass):
   @property
   def shape(self) -> tuple:
     if self.op is Ops.LOAD: return self.arg[0]
-    if self.op is Ops.CONST: return (1,)
+    if self.op is Ops.CONST: return ()
     if self.op is Ops.COPY: return self.src[0].shape
     if self.op is Ops.PERMUTE: return tuple(self.src[0].shape[i] for i in self.arg) # permuted shape
     if self.op is Ops.MATMUL: return self.src[0].shape[:-1] + (self.src[1].shape[-1],)

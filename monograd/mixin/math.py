@@ -34,6 +34,7 @@ class MathMixin:
   def relu(self) -> Self:  return self._unop(Ops.RELU)
   # red
   def sum(self, axis:int|tuple[int, ...]|None=None, keepdim:bool=False): return self._reduceop(Ops.SUM, axis, keepdim)
+  def maxreduce(self): raise NotImplementedError # proably needs axis and keepdim and keep it the same as sum
 
   def __add__(self, x:Self|ConstType):  return self.add(x)
   def __mul__(self, x:Self|ConstType):  return self.mul(x)

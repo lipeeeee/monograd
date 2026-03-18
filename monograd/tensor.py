@@ -128,7 +128,7 @@ def get_broadcasted_shape(s1:tuple, s2:tuple) -> tuple[tuple, tuple, tuple]: # t
   assert all(d1 == d2 or d1 == 1 or d2 == 1 for d1, d2 in zip(pad1, pad2)), f"cannot broadcast {s1} to {s2}"
   target_shape = tuple(max(d1, d2) for d1, d2 in zip(pad1, pad2))
   return target_shape, pad1, pad2
-def print_graph(uop:Tensor|UOp, prefix:str="", is_last:bool=True, visited:set|None=None):
+def pprint_graph(uop:Tensor|UOp, prefix:str="", is_last:bool=True, visited:set|None=None):
   if isinstance(uop, Tensor): uop = uop.uop
   if visited is None: visited = set()
   marker = "└── " if is_last else "├── "
@@ -148,11 +148,11 @@ def print_graph(uop:Tensor|UOp, prefix:str="", is_last:bool=True, visited:set|No
     next_prefix = prefix + ("    " if is_last else "│   ")
     for i, src_uop in enumerate(uop.src):
       is_last_src = (i == len(uop.src) - 1)
-      print_graph(src_uop, next_prefix, is_last_src, visited)
+      pprint_graph(src_uop, next_prefix, is_last_src, visited)
 
 if __name__ == "__main__":
   a = Tensor([[1, 2, 3], [4, 5, 6]], device="gpu", dtype="float64")
   b = Tensor([3, 2, 1], device="gpu")
   c = (a * 2) + b
-  print_graph(c)
+  pprint_graph(c)
   

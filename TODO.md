@@ -1,20 +1,29 @@
 # next
 - document contextvars/envvars
-- github actions run pytest
-- setup test env with pytest
 - re-read schedule.py
 - support np dtypes in to_dtype
 
 
 # optimization
+- Matmul to expand+mul+reduce
 - gemm/matmul ops should be optimized pre-written kernels, with diferences on tiling based on nvidia/amd (32 for nvidia 16 for amd). also different dtpes might require different kernels.
-- there is a lib called clblast that optimizes for every single gpu iteration. should use that for maximum perf gain
-- also pre-compiled kernels? maybe it doesn't result in any perf gain but still interesting
+    - there is a lib called clblast that optimizes for every single gpu iteration. should use that for maximum perf gain
+    - also pre-compiled kernels? maybe it doesn't result in any perf gain but still interesting
 - constant folding
 - MUL+ADD = MULACC
 - new op: V(vector)CONST, makes expand a noop, even if it has no cost(does it have cost or is EXPAND free/boundary?)
 - .to() creates COPY OP before realize, it should be a NOOP, maybe not.
 
+
+- const shape () -> 
+- add recip op
+- add pad shrink
+- make all reduce ops on Ops.REDUCE
+- DECOMPOSE ELEMOPS 
+    - Div = mul(a, recip(b)) - better for perf
+- compgt complt
+    - then decompose rest
+- OptOps — kernel-level loop optimization: Extracts last 10-15% optimization
 
 # important
 - GlobalCounters for mem_used;global_ops;global_mem;kernel_count;

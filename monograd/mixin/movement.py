@@ -34,6 +34,7 @@ class MovementMixin:
     new_shape = tuple(from_ if to == -1 or to is None else to for from_, to in zip(*(_align_left(self.shape, argfix(shape, *args)))))
     return self._broadcast_to(new_shape)
   def reshape(self, shape, *args) -> Self:
+    if self.shape == (): return self # noop for consts
     new_shape = tuple([s if s is not None else self.shape[i] for i, s in enumerate(argfix(shape, *args))])
     # resolve -1
     assert (c := new_shape.count(-1)) <= 1, f"only one dimension can be inferred using -1, getting {new_shape}"
