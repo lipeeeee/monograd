@@ -51,7 +51,7 @@ class Tensor(OpMixin):
     if x.shape != target_shape: x = x.expand(target_shape)
     if y.shape != pad_y: y = y.reshape(pad_y)
     if y.shape != target_shape: y = y.expand(target_shape)
-    return (y,x) if reverse else(x, y)
+    return (y, x) if reverse else(x, y)
 
   def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
   def _reduceop(self, op:Ops, axis:int|tuple[int, ...]|None=None, keepdim:bool=False) -> Tensor:
@@ -78,6 +78,7 @@ class Tensor(OpMixin):
   def _unop(self, op:Ops) -> Tensor:
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
+    ret.requires_grad = self.requires_grad
     return ret
   def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
     lhs, rhs = self._broadcasted(x, reverse)

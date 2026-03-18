@@ -11,7 +11,7 @@ from monograd.uop import GroupOp, Ops
 from monograd.uop.ops import UOp
 from monograd.engine.schedule import (
   _row_major_strides, is_scalar, is_fusable, is_invisible, is_boundary,
-  BufferRef, KernelTask, TaskKind, run_scheduler, _collect_inputs, pprint_schedule, 
+  BufferRef, KernelTask, TaskKind, run_scheduler, _collect_inputs, pprint_schedule,
 )
 
 # **** helpers ****
@@ -36,16 +36,23 @@ def expand(src, shape) -> UOp:
 def permute(src, order) -> UOp:
   return UOp(Ops.PERMUTE, src.dtype, (src,), order)
 
-def add(a, b) -> UOp:   return UOp(Ops.ADD,  a.dtype, (a, b), CPU)
-def mul(a, b) -> UOp:   return UOp(Ops.MUL,  a.dtype, (a, b), CPU)
-def sub(a, b) -> UOp:   return UOp(Ops.SUB,  a.dtype, (a, b), CPU)
-def div(a, b) -> UOp:   return UOp(Ops.DIV,  a.dtype, (a, b), CPU)
-def neg(a) -> UOp:      return UOp(Ops.NEG,  a.dtype, (a,),   CPU)
-def relu(a) -> UOp:     return UOp(Ops.RELU, a.dtype, (a,),   CPU)
-def exp(a) -> UOp:      return UOp(Ops.EXP,  a.dtype, (a,),   CPU)
-def log(a) -> UOp:      return UOp(Ops.LOG,  a.dtype, (a,),   CPU)
-def sqrt(a) -> UOp:     return UOp(Ops.SQRT, a.dtype, (a,),   CPU)
-def cast(a, dtype) -> UOp: return UOp(Ops.CAST, dtype, (a,),  CPU)
+def add(a, b) -> UOp:    return UOp(Ops.ADD,   a.dtype, (a, b), CPU)
+def mul(a, b) -> UOp:    return UOp(Ops.MUL,   a.dtype, (a, b), CPU)
+def relu(a) -> UOp:      return UOp(Ops.RELU,  a.dtype, (a,),   CPU)
+def exp(a) -> UOp:       return UOp(Ops.EXP,   a.dtype, (a,),   CPU)
+def log(a) -> UOp:       return UOp(Ops.LOG,   a.dtype, (a,),   CPU)
+def sqrt(a) -> UOp:      return UOp(Ops.SQRT,  a.dtype, (a,),   CPU)
+def cast(a, dtype) -> UOp: return UOp(Ops.CAST, dtype, (a,),    CPU)
+
+# **** decomposed ops ****
+# NEG, SUB, DIV are no longer primitive ops — they decompose into:
+#   neg(x)    = mul(x, CONST(-1))
+#   sub(a, b) = add(a, neg(b))
+#   div(a, b) = mul(a, recip(b))
+def recip(a) -> UOp: return UOp(Ops.RECIP, a.dtype, (a,), CPU)
+def neg(a) -> UOp: return mul(a, UOp(Ops.CONST, a.dtype, (), (-1.0, CPU)))
+def sub(a, b) -> UOp: return add(a, neg(b))
+def div(a, b) -> UOp: return mul(a, recip(b))
 
 def sumop(src, axes, out_shape) -> UOp:
   return UOp(Ops.SUM, src.dtype, (src,), (axes, out_shape))
@@ -69,6 +76,17 @@ def tasks_kinds(root: UOp) -> list[TaskKind]:
 
 def tasks_ops(root: UOp) -> list[list[Ops]]:
   return [[u.op for u in t.ops] for t in run_scheduler(root)]
+
+def all_ops_in_graph(root: UOp) -> list[Ops]:
+  """collect all op types reachable from root"""
+  visited, ops = set(), []
+  def walk(u):
+    if id(u) in visited: return
+    visited.add(id(u))
+    ops.append(u.op)
+    for s in u.src: walk(s)
+  walk(root)
+  return ops
 
 
 # **** _row_major_strides ****
@@ -138,6 +156,10 @@ class TestUOpClassifiers(unittest.TestCase):
   def test_is_fusable_false_for_movement(self):
     r = reshape(self.a, (2, 2))
     self.assertFalse(is_fusable(r))
+
+  def test_is_fusable_recip(self):
+    u = recip(self.a)
+    self.assertTrue(is_fusable(u))
 
   def test_is_invisible_movement_ops(self):
     r = reshape(self.a, (2, 2))
@@ -253,14 +275,14 @@ class TestBufferRefFromUop(unittest.TestCase):
     r   = reshape(a, (1, 4))
     e   = expand(r, (3, 4))
     ref = BufferRef.from_uop(e)
-    self.assertEqual(ref.strides[1], 1)   # dim1 was 4, stays 4, stride stays 1
+    self.assertEqual(ref.strides[1], 1)
 
   def test_permute_2d_transpose(self):
     a   = load((3, 4))
     p   = permute(a, (1, 0))
     ref = BufferRef.from_uop(p)
     self.assertEqual(ref.shape,   (4, 3))
-    self.assertEqual(ref.strides, (1, 4))  # original (4,1) reordered by (1,0)
+    self.assertEqual(ref.strides, (1, 4))
 
   def test_permute_3d(self):
     a   = load((2, 3, 4))
@@ -309,7 +331,6 @@ class TestIndexExpr(unittest.TestCase):
   def test_const_returns_zero(self):
     c   = const(2.0)
     ref = BufferRef.from_uop(c)
-    # after broadcast: is_scalar catches CONST
     self.assertEqual(ref.index_expr("gid", ()), "0")
 
   def test_fully_broadcast_returns_zero(self):
@@ -349,7 +370,6 @@ class TestIndexExpr(unittest.TestCase):
     e    = expand(r, (3, 2))
     ref  = BufferRef.from_uop(e)
     expr = ref.index_expr("gid", (3, 2))
-    # gid 0,1 → element 0; gid 2,3 → element 1; gid 4,5 → element 2
     expected = [0, 0, 1, 1, 2, 2]
     for i in range(6):
       self.assertEqual(eval_index(expr, i), expected[i])
@@ -359,7 +379,6 @@ class TestIndexExpr(unittest.TestCase):
     a    = load((2, 3))
     p    = permute(a, (1, 0))
     ref  = BufferRef.from_uop(p)
-    # strides should be (1, 3) — step 1 for original cols, 3 for original rows
     self.assertEqual(ref.strides, (1, 3))
 
   def test_3d_contiguous_sequential(self):
@@ -371,7 +390,7 @@ class TestIndexExpr(unittest.TestCase):
   def test_index_expr_shape_mismatch_raises(self):
     ref = BufferRef.from_uop(load((3, 4)))
     with self.assertRaises(AssertionError):
-      print(ref.index_expr("gid", (2, 4)))  # wrong shape
+      ref.index_expr("gid", (2, 4))
 
 
 # **** _collect_inputs ****
@@ -397,7 +416,7 @@ class TestCollectInputs(unittest.TestCase):
   def test_internal_op_not_in_inputs(self):
     """intermediate op inside the group must not be an input"""
     a, b, c = load((4,)), load((4,)), load((4,))
-    m       = mul(a, b)        # internal
+    m       = mul(a, b)
     out     = add(m, c)
     refs    = _collect_inputs([m, out])
     input_uops = [r.uop for r in refs]
@@ -483,7 +502,7 @@ class TestKernelTaskProperties(unittest.TestCase):
     self.assertIs(tasks[0].output_dtype, dtypes.float32)
 
 
-# **** run_scheduler ****
+# **** run_scheduler — task count and kinds ****
 class TestSchedulerTaskCount(unittest.TestCase):
   def test_single_binary_one_task(self):
     a, b = load((4,)), load((4,))
@@ -494,12 +513,19 @@ class TestSchedulerTaskCount(unittest.TestCase):
     self.assertEqual(len(run_scheduler(relu(a))), 1)
 
   def test_long_elementwise_chain_one_task(self):
-    """mul→add→relu→exp→neg should all fuse into one task"""
+    """mul→add→relu→exp — all fusable, no boundary ops → single kernel"""
     a, b = load((4,)), load((4,))
+    # neg is now MUL(x, CONST(-1)), still fusable
     out  = neg(exp(relu(add(mul(a, b), b))))
     tasks = run_scheduler(out)
     self.assertEqual(len(tasks), 1)
     self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
+
+  def test_recip_fuses_with_elementwise(self):
+    a, b = load((4,)), load((4,))
+    out  = mul(a, recip(b))   # decomposed div
+    tasks = run_scheduler(out)
+    self.assertEqual(len(tasks), 1)
 
   def test_reduce_splits_into_two_tasks(self):
     a     = load((4,))
@@ -561,7 +587,7 @@ class TestSchedulerTaskCount(unittest.TestCase):
   def test_elementwise_then_matmul(self):
     x = load((4, 8))
     w = load((8, 16))
-    xr  = relu(x)    # elementwise before matmul
+    xr  = relu(x)
     out = matmul(xr, w)
     tasks = run_scheduler(out)
     self.assertEqual(len(tasks), 2)
@@ -637,6 +663,17 @@ class TestSchedulerOps(unittest.TestCase):
     self.assertIn(Ops.CAST, ops)
     self.assertIn(Ops.RELU, ops)
 
+  def test_recip_fuses_in_chain(self):
+    """RECIP must appear in the fused ops list alongside other elementwise ops"""
+    a, b = load((4,)), load((4,))
+    out  = relu(div(a, b))   # = relu(mul(a, recip(b)))
+    tasks = run_scheduler(out)
+    self.assertEqual(len(tasks), 1)
+    ops = [u.op for u in tasks[0].ops]
+    self.assertIn(Ops.RECIP, ops)
+    self.assertIn(Ops.MUL,   ops)
+    self.assertIn(Ops.RELU,  ops)
+
 
 # **** run_scheduler — inputs correctness ****
 class TestSchedulerInputs(unittest.TestCase):
@@ -704,12 +741,7 @@ class TestRealWorldPatterns(unittest.TestCase):
   """
 
   def test_linear_layer_matmul_plus_bias(self):
-    """
-    y = x @ W + bias
-    x:(4,8)  W:(8,16)  bias:(16,)→broadcast→(4,16)
-
-    Expected: MATMUL task + ELEMENTWISE task (add+any activation)
-    """
+    """y = x @ W + bias — MATMUL task + ELEMENTWISE task"""
     x    = load((4, 8))
     w    = load((8, 16))
     bias = load((16,))
@@ -721,7 +753,7 @@ class TestRealWorldPatterns(unittest.TestCase):
     self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE)
 
   def test_linear_layer_with_relu(self):
-    """relu(x @ W + bias) — relu should fuse with the add"""
+    """relu(x @ W + bias) — relu fuses with add in elementwise task"""
     x    = load((4, 8))
     w    = load((8, 16))
     bias = load((16,))
@@ -729,7 +761,6 @@ class TestRealWorldPatterns(unittest.TestCase):
     out  = relu(add(matmul(x, w), br))
     tasks = run_scheduler(out)
     self.assertEqual(len(tasks), 2)
-    # relu and add must be in the same elementwise task
     elem_ops = [u.op for u in tasks[1].ops]
     self.assertIn(Ops.ADD,  elem_ops)
     self.assertIn(Ops.RELU, elem_ops)
@@ -738,32 +769,35 @@ class TestRealWorldPatterns(unittest.TestCase):
     """
     softmax(x) = exp(x - max(x)) / sum(exp(x - max(x)))
 
-    Expected tasks:
-      0: REDUCE  — max(x, axis=-1)
-      1: ELEMENTWISE — x - max, then exp  (fused)
+    sub decomposes to ADD(x, MUL(max, -1)) — still elementwise, still fuses.
+    div decomposes to MUL(exp, RECIP(sum)) — still elementwise, still fuses.
+
+    Expected tasks (unchanged from pre-decomposition):
+      0: REDUCE  — reducemax(x, axis=-1)
+      1: ELEMENTWISE — (x - max) then exp  (MUL+ADD+EXP fused)
       2: REDUCE  — sum(exp, axis=-1)
-      3: ELEMENTWISE — div
+      3: ELEMENTWISE — div result  (RECIP+MUL fused)
     """
     x      = load((2, 4))
-    # max reduce
-    x_max  = sumop(x, (1,), (2, 1))   # using SUM as stand-in, semantics same for scheduling
-    x_max  = UOp(Ops.REDUCEMAX, F32, (x,), ((1,), (2, 1)))  # proper MAX reduce
+    x_max  = UOp(Ops.REDUCEMAX, F32, (x,), ((1,), (2, 1)))
     br_max = broadcast(x_max, (2, 4))
-    x_sub  = sub(x, br_max)
+    x_sub  = sub(x, br_max)    # = add(x, mul(br_max, const(-1)))
     x_exp  = exp(x_sub)
     x_sum  = sumop(x_exp, (1,), (2, 1))
     br_sum = broadcast(x_sum, (2, 4))
-    out    = div(x_exp, br_sum)
+    out    = div(x_exp, br_sum)  # = mul(x_exp, recip(br_sum))
     tasks  = run_scheduler(out)
-    pprint_schedule(tasks)
     self.assertEqual(len(tasks), 4)
-    self.assertEqual(tasks[0].kind, TaskKind.REDUCE)   # max
-    self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE)  # sub + exp fused
-    self.assertEqual(tasks[2].kind, TaskKind.REDUCE)   # sum
-    self.assertEqual(tasks[3].kind, TaskKind.ELEMENTWISE)  # div
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE)      # max
+    self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE) # neg+add(sub)+exp fused
+    self.assertEqual(tasks[2].kind, TaskKind.REDUCE)      # sum
+    self.assertEqual(tasks[3].kind, TaskKind.ELEMENTWISE) # recip+mul(div) fused
 
   def test_softmax_sub_and_exp_fuse(self):
-    """sub and exp between the two reduces must be in the same task"""
+    """
+    sub and exp between the two reduces must be in the same task.
+    sub is now decomposed to ADD(x, MUL(max, -1)) — ADD and EXP must both be present.
+    """
     x      = load((2, 4))
     x_max  = UOp(Ops.REDUCEMAX, F32, (x,), ((1,), (2, 1)))
     br_max = broadcast(x_max, (2, 4))
@@ -773,26 +807,46 @@ class TestRealWorldPatterns(unittest.TestCase):
     br_sum = broadcast(x_sum, (2, 4))
     out    = div(x_exp, br_sum)
     tasks  = run_scheduler(out)
-    # task 1 should contain both SUB and EXP
     elem_task = tasks[1]
     ops = [u.op for u in elem_task.ops]
-    self.assertIn(Ops.SUB, ops)
-    self.assertIn(Ops.EXP, ops)
+    # sub is decomposed: ADD(x, MUL(br_max, CONST(-1)))
+    self.assertIn(Ops.ADD, ops)   # from decomposed sub
+    self.assertIn(Ops.MUL, ops)   # from neg part of sub
+    self.assertIn(Ops.EXP, ops)   # exp still present
+
+  def test_softmax_div_recip_fuse(self):
+    """
+    div between sum and output must be in the same elementwise task.
+    div is now decomposed to MUL(exp, RECIP(sum)) — RECIP and MUL must both be present.
+    """
+    x      = load((2, 4))
+    x_max  = UOp(Ops.REDUCEMAX, F32, (x,), ((1,), (2, 1)))
+    br_max = broadcast(x_max, (2, 4))
+    x_sub  = sub(x, br_max)
+    x_exp  = exp(x_sub)
+    x_sum  = sumop(x_exp, (1,), (2, 1))
+    br_sum = broadcast(x_sum, (2, 4))
+    out    = div(x_exp, br_sum)
+    tasks  = run_scheduler(out)
+    elem_task = tasks[3]
+    ops = [u.op for u in elem_task.ops]
+    self.assertIn(Ops.RECIP, ops)  # from decomposed div
+    self.assertIn(Ops.MUL,   ops)  # outer mul of decomposed div
 
   def test_mse_loss(self):
     """
-    loss = mean((pred - target)^2)
-         = sum((pred - target)^2) / N
+    loss = mean((pred - target)^2) = sum((pred-target)^2) / N
+    sub and div are decomposed but task count is unchanged.
 
-    Expected: ELEMENTWISE (sub+mul) → REDUCE (sum) → ELEMENTWISE (div by N)
+    Expected: ELEMENTWISE → REDUCE → ELEMENTWISE (3 tasks)
     """
     pred   = load((4,))
     target = load((4,))
-    diff   = sub(pred, target)
+    diff   = sub(pred, target)   # = add(pred, mul(target, -1))
     sq     = mul(diff, diff)
     s      = sumop(sq, (0,), (1,))
     n      = const(4.0)
-    out    = div(s, n)
+    out    = div(s, n)            # = mul(s, recip(const(4.0)))
     tasks  = run_scheduler(out)
     self.assertEqual(len(tasks), 3)
     self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
@@ -800,23 +854,22 @@ class TestRealWorldPatterns(unittest.TestCase):
     self.assertEqual(tasks[2].kind, TaskKind.ELEMENTWISE)
 
   def test_mse_sub_and_square_fuse(self):
+    """
+    sub is decomposed to ADD+MUL; squaring is MUL.
+    All three ops must fuse into the pre-reduce elementwise task.
+    """
     pred   = load((4,))
     target = load((4,))
-    diff   = sub(pred, target)
+    diff   = sub(pred, target)   # = add(pred, mul(target, -1))
     sq     = mul(diff, diff)
     s      = sumop(sq, (0,), (1,))
     tasks  = run_scheduler(s)
     elem_ops = [u.op for u in tasks[0].ops]
-    self.assertIn(Ops.SUB, elem_ops)
-    self.assertIn(Ops.MUL, elem_ops)
+    self.assertIn(Ops.ADD, elem_ops)  # from decomposed sub
+    self.assertIn(Ops.MUL, elem_ops)  # from neg and/or squaring
 
   def test_two_layer_mlp(self):
-    """
-    h = relu(x @ W1 + b1)
-    y = h @ W2 + b2
-
-    Expected: BLAS, ELEMENTWISE, BLAS, ELEMENTWISE (4 tasks)
-    """
+    """h = relu(x @ W1 + b1); y = h @ W2 + b2 — BLAS→ELEM→BLAS→ELEM"""
     x  = load((8, 16))
     w1 = load((16, 32))
     b1 = load((32,))
@@ -840,30 +893,23 @@ class TestRealWorldPatterns(unittest.TestCase):
   def test_layer_norm(self):
     """
     y = (x - mean(x)) / sqrt(var(x) + eps)
-
-    Involves two reduces (mean, variance) so minimum 5+ tasks.
-    Key check: the reduces break fusion correctly.
+    sub and div decompose but reduce structure is unchanged.
+    Must have at least 2 reduce tasks in correct order.
     """
     x    = load((4, 8))
-    # mean: sum / N
     s1   = sumop(x, (1,), (4, 1))
     n    = const(8.0)
-    mean = div(s1, n)
-    # x - mean
+    mean = div(s1, n)               # = mul(s1, recip(const(8.0)))
     br_mean = broadcast(mean, (4, 8))
-    diff    = sub(x, br_mean)
-    # variance: sum((x-mean)^2) / N
+    diff    = sub(x, br_mean)       # = add(x, mul(br_mean, -1))
     sq   = mul(diff, diff)
     s2   = sumop(sq, (1,), (4, 1))
     var  = div(s2, n)
-    # (x - mean) / sqrt(var + eps)
     eps  = const(1e-5)
     out  = div(diff, sqrt(add(var, eps)))
     tasks = run_scheduler(out)
-    # must have at least 2 reduce tasks
     reduce_count = sum(1 for t in tasks if t.kind == TaskKind.REDUCE)
     self.assertGreaterEqual(reduce_count, 2)
-    # first reduce must come before second reduce
     reduce_indices = [i for i, t in enumerate(tasks) if t.kind == TaskKind.REDUCE]
     self.assertLess(reduce_indices[0], reduce_indices[1])
 
@@ -889,8 +935,6 @@ class TestSchedulerEdgeCases(unittest.TestCase):
     """two reduces over same input — each gets own task"""
     a  = load((4,))
     s1 = sumop(a, (0,), (1,))
-    s2 = UOp(Ops.REDUCEMAX, F32, (a,), ((0,), (1,)))
-    # schedule from s1 only — s2 is a separate root
     tasks = run_scheduler(s1)
     self.assertEqual(len(tasks), 1)
     self.assertEqual(tasks[0].kind, TaskKind.REDUCE)
@@ -905,13 +949,19 @@ class TestSchedulerEdgeCases(unittest.TestCase):
     self.assertEqual(len(tasks), 1)
     self.assertEqual(len(tasks[0].ops), 10)
 
+  def test_neg_fuses_in_chain(self):
+    """neg (decomposed to MUL) must fuse — no extra task created"""
+    a = load((4,))
+    out = neg(relu(a))   # = mul(relu(a), const(-1))
+    tasks = run_scheduler(out)
+    self.assertEqual(len(tasks), 1)
+
   def test_broadcast_scalar_to_2d(self):
     """scalar constant broadcast to full 2D shape — no extra tasks"""
     a = load((3, 4))
     c = const(2.0)
     tasks = run_scheduler(mul(a, c))
     self.assertEqual(len(tasks), 1)
-    # CONST should not appear as input
     for ref in tasks[0].inputs:
       self.assertIsNot(ref.uop.op, Ops.CONST)
 
@@ -925,11 +975,8 @@ class TestSchedulerEdgeCases(unittest.TestCase):
 
   def test_diamond_pattern_shared_input(self):
     """
-    Diamond: a feeds both branches, results merged at add.
-    a → relu → \
-                add → out
-    a → exp  → /
-
+    a → relu → add → out
+    a → exp  ↗
     Single elementwise task, a deduplicated in inputs.
     """
     a   = load((4,))
@@ -938,12 +985,11 @@ class TestSchedulerEdgeCases(unittest.TestCase):
     out = add(r, e)
     tasks = run_scheduler(out)
     self.assertEqual(len(tasks), 1)
-    # a should appear only once in inputs
     input_uops = [ref.uop for ref in tasks[0].inputs]
     self.assertEqual(input_uops.count(a), 1)
 
   def test_output_shape_correct_after_broadcast_fusion(self):
-    """fused kernel output shape must be the broadcast shape, not input shape"""
+    """fused kernel output shape must be the broadcast shape"""
     a    = load((2, 3))
     b    = broadcast(load((3,)), (2, 3))
     out  = add(a, b)

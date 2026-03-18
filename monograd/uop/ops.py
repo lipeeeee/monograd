@@ -4,13 +4,17 @@ from typing import Any
 import weakref
 from monograd.device import Buffer, Device
 from monograd.dtype import DType, dtypes
+from monograd.mixin import OpMixin
 from monograd.uop import GroupOp, Ops
 from monograd.utils import DEBUG
 
 # only allow unique UOps
 class UOpMetaClass(type):
   ucache: dict[tuple, weakref.ReferenceType[UOp]] = weakref.WeakValueDictionary()
+  _no_cache = {Ops.LOAD, Ops.CONST}
   def __call__(self, *args, **kwds):
+    op = args[0] if args else kwds.get('op')
+    if op in self._no_cache: return super().__call__(*args, **kwds) # _no_cache
     if (ret:=UOpMetaClass.ucache.get(args, None)) is not None: return ret
     UOpMetaClass.ucache[args] = ret = super().__call__(*args)
     return ret

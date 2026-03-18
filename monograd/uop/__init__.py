@@ -7,23 +7,24 @@ class Ops(IntEnum):
   COPY = auto(); SINK = auto();
 
   # Unary Ops
-  NEG = auto(); RELU = auto(); LOG = auto(); EXP = auto()
+  RELU = auto(); LOG = auto(); EXP = auto()
   SIN = auto(); SQRT = auto(); CAST = auto()
+  RECIP = auto() # recip is a fast gpu operation (1.0f/val)
     
   # Binary Ops
-  ADD = auto(); SUB = auto(); MUL = auto();
+  ADD = auto(); MUL = auto();
   MAX = auto(); POW = auto(); MOD = auto()
   OR = auto(); XOR = auto(); AND = auto()
-  DIV = auto()
 
   # BLAS
   MATMUL = auto(); GEMM = auto()
 
   # Ternary Ops
-  WHERE = auto(); MULACC = auto()
+  WHERE = auto();
     
   # Movement/Shape Ops
   RESHAPE = auto(); EXPAND = auto(); PERMUTE = auto()
+  PAD = auto(); SHRINK = auto();
 
   # Reduce ops
   SUM = auto(); REDUCEMAX = auto()
@@ -32,13 +33,13 @@ class Ops(IntEnum):
   def __repr__(self): return str(self)
 
 class GroupOp:
-  Unary = {Ops.SIN, Ops.SQRT, Ops.NEG, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP}
-  Binary = {Ops.ADD, Ops.MUL, Ops.MOD, Ops.MAX, Ops.XOR, Ops.OR, Ops.AND, Ops.SUB, Ops.POW, Ops.DIV}
-  Ternary = {Ops.WHERE, Ops.MULACC}
+  Unary = {Ops.SIN, Ops.SQRT, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP, Ops.RECIP}
+  Binary = {Ops.ADD, Ops.MUL, Ops.MOD, Ops.MAX, Ops.XOR, Ops.OR, Ops.AND, Ops.POW}
+  Ternary = {Ops.WHERE}
   ALU = set.union(Unary, Binary, Ternary)
 
   Input = {Ops.LOAD, Ops.CONST}
-  Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE}
+  Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE, Ops.PAD, Ops.SHRINK}
   Reduce = {Ops.SUM, Ops.REDUCEMAX}
   BLAS = {Ops.MATMUL, Ops.GEMM}
 

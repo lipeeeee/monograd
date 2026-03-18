@@ -28,8 +28,8 @@ def make_const(val, dtype=F32, device=CPU) -> UOp:
 # **** duplication & caching ****
 class TestUOpMetaClass(unittest.TestCase):
   def test_identical_args_same_object(self):
-    a = make_const(1.0)
-    b = make_const(1.0)
+    a = UOp(Ops.ADD, F32, (), ())
+    b = UOp(Ops.ADD, F32, (), ()) 
     self.assertIs(a, b)
 
   def test_different_val_different_object(self):
@@ -154,7 +154,7 @@ class TestUOpDevice(unittest.TestCase):
 
   def test_unary_device_from_arg(self):
     src = make_load((4,), device=CPU)
-    neg = UOp(Ops.NEG, F32, (src,), CPU)
+    neg = UOp(Ops.EXP, F32, (src,), CPU)
     self.assertEqual(neg.device, CPU)
 
   def test_binary_device_from_arg(self):
@@ -286,16 +286,15 @@ class TestUOpRepr(unittest.TestCase):
 # **** group op membership ****
 class TestGroupOpMembership(unittest.TestCase):
   def test_unary_ops(self):
-    for op in (Ops.NEG, Ops.RELU, Ops.LOG, Ops.EXP, Ops.SQRT, Ops.CAST):
+    for op in (Ops.RELU, Ops.LOG, Ops.EXP, Ops.SQRT, Ops.CAST, Ops.RECIP):
       self.assertIn(op, GroupOp.Unary, f"{op} should be in Unary")
 
   def test_binary_ops(self):
-    for op in (Ops.ADD, Ops.SUB, Ops.MUL, Ops.DIV, Ops.MAX,
-               Ops.POW, Ops.MOD, Ops.OR, Ops.XOR, Ops.AND):
+    for op in (Ops.ADD, Ops.MUL, Ops.MAX, Ops.POW, Ops.MOD, Ops.OR, Ops.XOR, Ops.AND):
       self.assertIn(op, GroupOp.Binary, f"{op} should be in Binary")
 
   def test_movement_ops(self):
-    for op in (Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE):
+    for op in (Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE, Ops.PAD, Ops.SHRINK):
       self.assertIn(op, GroupOp.Movement, f"{op} should be in Movement")
 
   def test_reduce_ops(self):

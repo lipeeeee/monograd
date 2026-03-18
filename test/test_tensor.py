@@ -45,7 +45,6 @@ class TestTensorConstruction(unittest.TestCase):
     """regression — must use buf.size not len(buf) for multi-dim arrays"""
     arr = np.ones((3, 4), dtype=np.float32)
     t   = Tensor(arr)
-    # buffer must hold 12 elements, not 3
     self.assertEqual(t.uop.buffer.size, 12)
 
   def test_from_list_default_dtype_float32(self):
@@ -109,7 +108,7 @@ class TestTensorConstruction(unittest.TestCase):
     self.assertEqual(t.parents, t.uop.src)
 
 
-# **** _binop - shape, dtype, device ****
+# **** _binop — shape, dtype, device ****
 class TestTensorBinop(unittest.TestCase):
   def setUp(self):
     self.a = Tensor([[1.0, 2.0], [3.0, 4.0]])
@@ -142,14 +141,14 @@ class TestTensorBinop(unittest.TestCase):
     self.assertFalse(has_op(c, Ops.CAST), "no CAST needed for same dtype")
 
   def test_broadcast_1d_to_2d(self):
-    a = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])  # (2,3)
-    b = Tensor([1.0, 2.0, 3.0])                     # (3,)
+    a = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    b = Tensor([1.0, 2.0, 3.0])
     c = a + b
     self.assertEqual(c.shape, (2, 3))
 
   def test_broadcast_inserts_reshape_and_expand(self):
-    a = Tensor([[1.0, 2.0], [3.0, 4.0]])  # (2,2)
-    b = Tensor([1.0, 2.0])                # (2,)
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    b = Tensor([1.0, 2.0])
     c = a + b
     self.assertTrue(has_op(c, Ops.RESHAPE))
     self.assertTrue(has_op(c, Ops.EXPAND))
@@ -175,19 +174,21 @@ class TestTensorBinop(unittest.TestCase):
       _ = a + b
 
   def test_incompatible_shapes_raise(self):
-    a = Tensor([[1.0, 2.0], [3.0, 4.0]])  # (2,2)
-    b = Tensor([1.0, 2.0, 3.0])           # (3,) — incompatible
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    b = Tensor([1.0, 2.0, 3.0])
     with self.assertRaises(AssertionError):
       _ = a + b
 
   def test_reverse_flag_swaps_operands(self):
     """reverse=True used by __radd__ etc — lhs/rhs should swap"""
     a = Tensor([1.0, 2.0])
-    b = Tensor(2)
-    normal  = a._binop(Ops.SUB, b, reverse=False)
-    reverse = a._binop(Ops.SUB, b, reverse=True)
-    # the src order of the UOp should differ
-    self.assertNotEqual(normal.uop.src, reverse.uop.src)
+    b = Tensor([3.0, 4.0])
+    normal  = a.mul(b, False)
+    reverse = a.mul(b, True)
+    self.assertIs(normal.uop.src[0],  a.uop)
+    self.assertIs(normal.uop.src[1],  b.uop)
+    self.assertIs(reverse.uop.src[0], b.uop)  # swapped
+    self.assertIs(reverse.uop.src[1], a.uop)  # swapped
 
 
 # **** _unop ****
@@ -196,29 +197,41 @@ class TestTensorUnop(unittest.TestCase):
     self.a = Tensor([1.0, 2.0, 3.0])
 
   def test_unop_preserves_shape(self):
+    """all primitive unary ops must preserve tensor shape"""
     for op in GroupOp.Unary - {Ops.CAST}:
       r = self.a._unop(op)
       self.assertEqual(r.shape, self.a.shape, f"{op} should preserve shape")
 
   def test_unop_preserves_dtype(self):
+    """all primitive unary ops must preserve dtype"""
     for op in GroupOp.Unary - {Ops.CAST}:
       r = self.a._unop(op)
       self.assertIs(r.dtype, self.a.dtype, f"{op} should preserve dtype")
 
   def test_unop_correct_op_in_uop(self):
+    """_unop must store the correct op in the resulting UOp"""
     for op in GroupOp.Unary - {Ops.CAST}:
       r = self.a._unop(op)
       self.assertIs(r.uop.op, op, f"uop.op should be {op}")
 
   def test_unop_src_is_self(self):
-    r = self.a._unop(Ops.NEG)
+    """the unary op's src must contain the input tensor's UOp"""
+    # use RELU — a stable primitive unary op
+    r = self.a._unop(Ops.RELU)
     self.assertIn(self.a.uop, r.uop.src)
+
+  def test_recip_is_primitive_unary(self):
+    """RECIP must be in GroupOp.Unary and behave as a unary op"""
+    r = self.a._unop(Ops.RECIP)
+    self.assertEqual(r.shape, self.a.shape)
+    self.assertIs(r.dtype, self.a.dtype)
+    self.assertIs(r.uop.op, Ops.RECIP)
 
 
 # **** _reduceop ****
 class TestTensorReduceop(unittest.TestCase):
   def setUp(self):
-    self.a = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])  # (2,3)
+    self.a = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
   def test_reduce_all_axes(self):
     r = self.a._reduceop(Ops.SUM, axis=None)
@@ -264,7 +277,6 @@ class TestTensorReduceop(unittest.TestCase):
     """0D tensor reduce should produce axis=()"""
     scalar_uop = UOp(Ops.CONST, dtypes.float32, (), (1.0, Device.CPU))
     t = Tensor(scalar_uop)
-    # should not raise
     r = t._reduceop(Ops.SUM)
     self.assertIsNotNone(r)
 
@@ -332,7 +344,7 @@ class TestTensorTo(unittest.TestCase):
     self.assertIs(copy.uop.op, Ops.COPY)
 
 
-# **** matmul/gemm ****
+# **** matmul ****
 class TestTensorMatmul(unittest.TestCase):
   def test_matmul_output_shape(self):
     a  = Tensor(np.zeros((4, 8), dtype=np.float32))
@@ -383,50 +395,83 @@ class TestMathMixin(unittest.TestCase):
     self.a = Tensor([1.0, 2.0, 3.0])
     self.b = Tensor([4.0, 5.0, 6.0])
 
-  def _assert_op(self, t: Tensor, op: Ops):
-    self.assertIs(t.uop.op, op, f"expected {op}, got {t.uop.op}")
+  def _assert_root_op(self, t: Tensor, op: Ops):
+    self.assertIs(t.uop.op, op, f"expected root op {op}, got {t.uop.op}")
 
-  # binary operators
-  def test_add(self):        self._assert_op(self.a + self.b, Ops.ADD)
-  def test_sub(self):        self._assert_op(self.a - self.b, Ops.SUB)
-  def test_mul(self):        self._assert_op(self.a * self.b, Ops.MUL)
-  def test_truediv(self):    self._assert_op(self.a / self.b, Ops.DIV)
-  def test_pow(self):        self._assert_op(self.a ** self.b, Ops.POW)
+  # **** binary ops that are still primitive ****
+  def test_add(self):
+    self._assert_root_op(self.a + self.b, Ops.ADD)
 
-  # reflected operators — scalar on left
+  def test_mul(self):
+    self._assert_root_op(self.a * self.b, Ops.MUL)
+
+  def test_pow(self):
+    self._assert_root_op(self.a ** self.b, Ops.POW)
+
+  # **** decomposed binary ops ***
+  def test_sub_decomposes_to_add(self):
+    """a - b is decomposed to ADD(a, MUL(b, CONST(-1)))"""
+    r = self.a - self.b
+    self._assert_root_op(r, Ops.ADD)          # outer ADD
+    self.assertTrue(has_op(r, Ops.MUL))       # inner MUL for neg
+    self.assertTrue(has_op(r, Ops.CONST))     # CONST(-1)
+
+  def test_truediv_decomposes_to_mul_recip(self):
+    """a / b is decomposed to MUL(a, RECIP(b))"""
+    r = self.a / self.b
+    self._assert_root_op(r, Ops.MUL)          # outer MUL
+    self.assertTrue(has_op(r, Ops.RECIP))     # RECIP of divisor
+
+  # **** reflected operators ****
   def test_radd_scalar(self):
     r = 1.0 + self.a
-    self._assert_op(r, Ops.ADD)
+    self._assert_root_op(r, Ops.ADD)
 
   def test_rsub_scalar(self):
+    """1.0 - a decomposes to ADD(CONST(1.0), MUL(a, CONST(-1)))"""
     r = 1.0 - self.a
-    self._assert_op(r, Ops.SUB)
+    self._assert_root_op(r, Ops.ADD)
+    self.assertTrue(has_op(r, Ops.MUL))   # neg part
 
   def test_rmul_scalar(self):
     r = 2.0 * self.a
-    self._assert_op(r, Ops.MUL)
+    self._assert_root_op(r, Ops.MUL)
 
   def test_rtruediv_scalar(self):
+    """1.0 / a decomposes to MUL(CONST(1.0), RECIP(a))"""
     r = 1.0 / self.a
-    self._assert_op(r, Ops.DIV)
+    self._assert_root_op(r, Ops.MUL)
+    self.assertTrue(has_op(r, Ops.RECIP))
 
-  # unary operators
-  def test_neg(self):        self._assert_op(-self.a, Ops.NEG)
-  def test_log(self):        self._assert_op(self.a.log(), Ops.LOG)
-  def test_exp(self):        self._assert_op(self.a.exp(), Ops.EXP)
-  def test_sqrt(self):       self._assert_op(self.a.sqrt(), Ops.SQRT)
-  def test_relu(self):       self._assert_op(self.a.relu(), Ops.RELU)
-  def test_sin(self):        self._assert_op(self.a.sin(), Ops.SIN)
+  # **** decomposed unary ops ****
+  def test_neg_decomposes_to_mul(self):
+    """-a is decomposed to MUL(a, CONST(-1))"""
+    r = -self.a
+    self._assert_root_op(r, Ops.MUL)
+    self.assertTrue(has_op(r, Ops.CONST))   # the CONST(-1)
 
-  # reduce
+  # **** primitive unary ops ****
+  def test_log(self):   self._assert_root_op(self.a.log(),  Ops.LOG)
+  def test_exp(self):   self._assert_root_op(self.a.exp(),  Ops.EXP)
+  def test_sqrt(self):  self._assert_root_op(self.a.sqrt(), Ops.SQRT)
+  def test_relu(self):  self._assert_root_op(self.a.relu(), Ops.RELU)
+  def test_sin(self):   self._assert_root_op(self.a.sin(),  Ops.SIN)
+
+  def test_recip_is_primitive(self):
+    """recip is a new primitive unary op — root op must be RECIP"""
+    r = self.a.recip()
+    self._assert_root_op(r, Ops.RECIP)
+
+  # **** reduce ****
   def test_sum_no_axis(self):
     r = self.a.sum()
     self.assertIs(r.uop.op if r.uop.op is Ops.SUM else r.uop.src[0].op, Ops.SUM)
 
+  # **** matmul operator ****
   def test_matmul_operator(self):
     a = Tensor(np.zeros((3, 4), dtype=np.float32))
     b = Tensor(np.zeros((4, 5), dtype=np.float32))
-    self._assert_op(a @ b, Ops.MATMUL)
+    self._assert_root_op(a @ b, Ops.MATMUL)
 
   def test_ufix_wraps_scalar_in_const_like(self):
     """adding a Python int should produce a CONST node in the graph"""
@@ -434,18 +479,17 @@ class TestMathMixin(unittest.TestCase):
     self.assertTrue(has_op(r, Ops.CONST))
 
   def test_ufix_passes_tensor_through(self):
-    """adding a Tensor should not produce an extra CONST"""
+    """adding a Tensor should not produce an extra CONST at the ADD level"""
     r = self.a + self.b
-    # both sources of ADD should be LOAD nodes not CONST
     add_uop = r.uop
     src_ops = [s.op for s in add_uop.src]
     self.assertNotIn(Ops.CONST, src_ops)
 
 
-# **** movementmixin - reshape ****
+# **** movementmixin — reshape ****
 class TestReshape(unittest.TestCase):
   def setUp(self):
-    self.t = Tensor(np.zeros((2, 3), dtype=np.float32))  # 6 elements
+    self.t = Tensor(np.zeros((2, 3), dtype=np.float32))
 
   def test_reshape_same_shape_noop(self):
     r = self.t.reshape((2, 3))
@@ -484,7 +528,7 @@ class TestReshape(unittest.TestCase):
     self.assertIs(r.dtype, self.t.dtype)
 
 
-# **** movementmixin - expand ****
+# **** movementmixin — expand ****
 class TestExpand(unittest.TestCase):
   def test_expand_1d_to_2d(self):
     t = Tensor(np.zeros((1, 4), dtype=np.float32))
@@ -507,13 +551,12 @@ class TestExpand(unittest.TestCase):
     self.assertIs(e.dtype, t.dtype)
 
   def test_expand_non_broadcast_dim_raises(self):
-    """can only expand dims that are size 1"""
     t = Tensor(np.zeros((2, 4), dtype=np.float32))
     with self.assertRaises(AssertionError):
       t.expand((3, 4))
 
 
-# **** movementmixin - permute ****
+# **** movementmixin — permute ****
 class TestPermute(unittest.TestCase):
   def test_permute_2d_transpose(self):
     t = Tensor(np.zeros((3, 4), dtype=np.float32))
@@ -543,16 +586,15 @@ class TestPermute(unittest.TestCase):
   def test_permute_invalid_axes_raises(self):
     t = Tensor(np.zeros((3, 4), dtype=np.float32))
     with self.assertRaises(AssertionError):
-      t.permute((0, 2))  # axis 2 doesn't exist for 2D
+      t.permute((0, 2))
 
   def test_permute_identity_noop(self):
-    """permuting with identity order should behave as noop shape-wise"""
     t = Tensor(np.zeros((3, 4), dtype=np.float32))
     p = t.permute((0, 1))
     self.assertEqual(p.shape, (3, 4))
 
 
-# **** movementmixin - transpose ****
+# **** movementmixin — transpose ****
 class TestTranspose(unittest.TestCase):
   def test_transpose_default_swaps_last_two(self):
     t = Tensor(np.zeros((3, 4), dtype=np.float32))
