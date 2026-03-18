@@ -11,7 +11,7 @@ from monograd.utils import DEBUG
 # only allow unique UOps
 class UOpMetaClass(type):
   ucache: dict[tuple, weakref.ReferenceType[UOp]] = weakref.WeakValueDictionary()
-  _no_cache = {Ops.LOAD, Ops.CONST}
+  _no_cache = {Ops.LOAD}
   def __call__(self, *args, **kwds):
     op = args[0] if args else kwds.get('op')
     if op in self._no_cache: return super().__call__(*args, **kwds) # _no_cache

@@ -28,8 +28,8 @@ def make_const(val, dtype=F32, device=CPU) -> UOp:
 # **** duplication & caching ****
 class TestUOpMetaClass(unittest.TestCase):
   def test_identical_args_same_object(self):
-    a = UOp(Ops.ADD, F32, (), ())
-    b = UOp(Ops.ADD, F32, (), ()) 
+    a = make_const(2)
+    b = make_const(2)
     self.assertIs(a, b)
 
   def test_different_val_different_object(self):
