@@ -20,7 +20,7 @@ class Ops(IntEnum):
   MATMUL = auto(); GEMM = auto()
 
   # Ternary Ops
-  WHERE = auto();
+  WHERE = auto(); MULACC = auto();
     
   # Movement/Shape Ops
   RESHAPE = auto(); EXPAND = auto(); PERMUTE = auto()
@@ -35,7 +35,7 @@ class Ops(IntEnum):
 class GroupOp:
   Unary = {Ops.SIN, Ops.SQRT, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP, Ops.RECIP}
   Binary = {Ops.ADD, Ops.MUL, Ops.MOD, Ops.MAX, Ops.XOR, Ops.OR, Ops.AND, Ops.POW}
-  Ternary = {Ops.WHERE}
+  Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)
 
   Input = {Ops.LOAD, Ops.CONST}

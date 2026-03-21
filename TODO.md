@@ -5,17 +5,17 @@
 
 
 # optimization
-- Matmul to expand+mul+reduce
 - gemm/matmul ops should be optimized pre-written kernels, with diferences on tiling based on nvidia/amd (32 for nvidia 16 for amd). also different dtpes might require different kernels.
     - there is a lib called clblast that optimizes for every single gpu iteration. should use that for maximum perf gain
     - also pre-compiled kernels? maybe it doesn't result in any perf gain but still interesting
-- constant folding
 - new op: V(vector)CONST, makes expand a noop, even if it has no cost(does it have cost or is EXPAND free/boundary?)
 - .to() creates COPY OP before realize, it should be a NOOP, maybe not.
 
 - compgt complt
     - then decompose rest
+- graph 
 - OptOps — kernel-level loop optimization: Extracts last 10-15% optimization
+- We aren't caching LOAD ops, not sure if in the future its worth it to make them cachable
 
 # important
 - GlobalCounters for mem_used;global_ops;global_mem;kernel_count;
