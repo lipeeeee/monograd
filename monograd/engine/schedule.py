@@ -125,7 +125,8 @@ def run_scheduler(root:UOp) -> list[KernelTask]:
     elif is_fusable(node): current_group.append(node)
     elif is_boundary(node):
       _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)
-      kind = TaskKind.BLAS if node.op in GroupOp.BLAS else TaskKind.REDUCE if node.op in GroupOp.Reduce else TaskKind.COPY
+      kind = TaskKind.BLAS if node.op in GroupOp.BLAS else TaskKind.REDUCE if node.op in GroupOp.Reduce else TaskKind.COPY if node.op is Ops.COPY else None
+      assert kind is not None, "could not determine boundary node kind {node}"
       scheduled_kernels.append(KernelTask(kind, [node], _collect_inputs([node]))) # manual flush
   _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels) # flush any remaining ops
   return scheduled_kernels

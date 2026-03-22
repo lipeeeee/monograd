@@ -293,6 +293,10 @@ class TestGroupOpMembership(unittest.TestCase):
     for op in (Ops.ADD, Ops.MUL, Ops.MAX, Ops.POW, Ops.MOD, Ops.OR, Ops.XOR, Ops.AND):
       self.assertIn(op, GroupOp.Binary, f"{op} should be in Binary")
 
+  def test_ternary_ops(self):
+    for op in (Ops.WHERE, Ops.MULACC):
+      self.assertIn(op, GroupOp.Ternary, f"{op} should be in Ternary")
+
   def test_movement_ops(self):
     for op in (Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE, Ops.PAD, Ops.SHRINK):
       self.assertIn(op, GroupOp.Movement, f"{op} should be in Movement")

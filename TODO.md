@@ -13,7 +13,6 @@
 
 - compgt complt
     - then decompose rest
-- graph 
 - OptOps — kernel-level loop optimization: Extracts last 10-15% optimization
 - We aren't caching LOAD ops, not sure if in the future its worth it to make them cachable
 
@@ -25,4 +24,5 @@
 
 
 # unimportant
+- tensor fns such as zeros(), arrange(), ones(), randn()
 - mnist.py should be cleaned

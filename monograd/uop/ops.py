@@ -3,10 +3,8 @@ from dataclasses import dataclass
 from typing import Any
 import weakref
 from monograd.device import Buffer, Device
-from monograd.dtype import DType, dtypes
-from monograd.mixin import OpMixin
+from monograd.dtype import ConstType, DType, dtypes
 from monograd.uop import GroupOp, Ops
-from monograd.utils import DEBUG
 
 # only allow unique UOps
 class UOpMetaClass(type):
@@ -71,3 +69,7 @@ class UOp(metaclass=UOpMetaClass):
   def __hash__(self): return id(self) # NOTE: Not hashing this causes an exception, but im unsure if this will cause problems because of weakref
   def __repr__(self):
     return f"<UOp {self.op} dtype={self.dtype.name} arg={self.arg}>"
+
+# https://en.wikipedia.org/wiki/Identity_element & https://en.wikipedia.org/wiki/Absorbing_element
+def identity_element(op:Ops, dt:DType) -> ConstType: return { Ops.ADD: 0, Ops.MUL: 1, Ops.MAX: dt.min}[op]
+def absorbing_element(op:Ops, dt:DType) -> ConstType: return { Ops.MUL: 0, Ops.AND: False, Ops.MAX: dt.max}[op]
