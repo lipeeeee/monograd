@@ -14,6 +14,8 @@
 - compgt complt
     - then decompose rest
 - OptOps — kernel-level loop optimization: Extracts last 10-15% optimization
+- Kernel compile caching
+- minimize ram/vram access because it's slow
 - We aren't caching LOAD ops, not sure if in the future its worth it to make them cachable
 
 # important
