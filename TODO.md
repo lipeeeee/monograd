@@ -18,6 +18,10 @@
 - minimize ram/vram access because it's slow
 - We aren't caching LOAD ops, not sure if in the future its worth it to make them cachable
 
+- Debug stuff
+- look for cache optims
+- test optimize.py
+
 # important
 - GlobalCounters for mem_used;global_ops;global_mem;kernel_count;
 - environmentalize/globalize data/ folder for downloding and caching (is it a good name?)
