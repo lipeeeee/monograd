@@ -29,7 +29,7 @@ class DType(metaclass=DTypeMetaClass):
   def itemsize(self) -> int: return (self.bitsize + 7) // 8
   @property
   def np_dtype(self) -> np.dtype: return to_np_dtype(self)
-  def __repr__(self) -> str: return self.name + str(self.bitsize)
+  def __repr__(self) -> str: return self.name + str(self.bitsize) # char1 for bool
 
 class dtypes:
   @staticmethod
@@ -66,15 +66,15 @@ class dtypes:
     raise RuntimeError(f"Could not infer dtype of {x} with type {type(x)}")
 
   void: Final[DType] = DType.new(-1, 0, "void", None)
-  bool: Final[DType] = DType.new(0, 1, "bool", '?')
-  int8: Final[DType] = DType.new(1, 8, "signed char", 'b')
-  uint8: Final[DType] = DType.new(2, 8, "unsigned char", 'B')
+  bool: Final[DType] = DType.new(0, 1, "char", '?')
+  int8: Final[DType] = DType.new(1, 8, "char", 'b')
+  uint8: Final[DType] = DType.new(2, 8, "uchar", 'B')
   int16: Final[DType] = DType.new(3, 16, "short", 'h')
-  uint16: Final[DType] = DType.new(4, 16, "unsigned short", 'H')
+  uint16: Final[DType] = DType.new(4, 16, "ushort", 'H')
   int32: Final[DType] = DType.new(5, 32, "int", 'i')
-  uint32: Final[DType] = DType.new(6, 32, "unsigned int", 'I')
+  uint32: Final[DType] = DType.new(6, 32, "uint", 'I')
   int64: Final[DType] = DType.new(7, 64, "long", 'q')
-  uint64: Final[DType] = DType.new(8, 64, "unsigned long", 'Q')
+  uint64: Final[DType] = DType.new(8, 64, "ulong", 'Q')
   float16: Final[DType] = DType.new(11, 16, "half", 'e')
   float32: Final[DType] = DType.new(13, 32, "float", 'f')
   float64: Final[DType] = DType.new(14, 64, "double", 'd')
