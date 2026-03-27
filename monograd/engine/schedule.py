@@ -88,8 +88,7 @@ class BufferRef:
     _bufferref_cache[uop] = ret
     if DEBUG >= 4: print(f"BufferRef.from_uop creating reference: {ret}")
     return ret
-  def index_expr(self, gid:str, output_shape:tuple[int, ...]) -> str: # generates C index expr
-    assert self.shape == output_shape, f"is this a bug? shape mismatch generating C index {self.shape} != {output_shape}"
+  def index_expr(self, gid:str="gid") -> str: # generates C index expr
     if is_scalar(self.uop, self.strides): return "0"
     # build per-dim coordinate expressions from flat gid
     # e.g. for output_shape=(2,3):
@@ -97,8 +96,8 @@ class BufferRef:
     #   dim 1: coord = gid % 3
     coords: list[str] = []
     remaining = gid
-    for i, dim_size in enumerate(output_shape):
-      below = prod(output_shape[i+1:])  # product of all dims below this one
+    for i, dim_size in enumerate(self.shape):
+      below = prod(self.shape[i+1:])  # product of all dims below this one
       if below == 1: coords.append(remaining)
       else:
         coords.append(f"({remaining} / {below})")

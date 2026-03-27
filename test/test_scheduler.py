@@ -331,25 +331,25 @@ class TestIndexExpr(unittest.TestCase):
   def test_const_returns_zero(self):
     c   = const(2.0)
     ref = BufferRef.from_uop(c)
-    self.assertEqual(ref.index_expr("gid", ()), "0")
+    self.assertEqual(ref.index_expr("gid"), "0")
 
   def test_fully_broadcast_returns_zero(self):
     a   = load((1,))
     r   = reshape(a, (1, 1))
     e   = expand(r, (3, 4))
     ref = BufferRef.from_uop(e)
-    self.assertEqual(ref.index_expr("gid", (3, 4)), "0")
+    self.assertEqual(ref.index_expr("gid"), "0")
 
   def test_1d_contiguous_sequential(self):
     ref  = BufferRef.from_uop(load((6,)))
-    expr = ref.index_expr("gid", (6,))
+    expr = ref.index_expr("gid")
     for i in range(6):
       self.assertEqual(eval_index(expr, i), i)
 
   def test_2d_contiguous_sequential(self):
     """flat gid should map to same position in row-major layout"""
     ref  = BufferRef.from_uop(load((2, 3)))
-    expr = ref.index_expr("gid", (2, 3))
+    expr = ref.index_expr("gid")
     for i in range(6):
       self.assertEqual(eval_index(expr, i), i)
 
@@ -359,7 +359,7 @@ class TestIndexExpr(unittest.TestCase):
     r    = reshape(a, (1, 3))
     e    = expand(r, (2, 3))
     ref  = BufferRef.from_uop(e)
-    expr = ref.index_expr("gid", (2, 3))
+    expr = ref.index_expr("gid")
     for i in range(6):
       self.assertEqual(eval_index(expr, i), i % 3)
 
@@ -369,7 +369,7 @@ class TestIndexExpr(unittest.TestCase):
     r    = reshape(a, (3, 1))
     e    = expand(r, (3, 2))
     ref  = BufferRef.from_uop(e)
-    expr = ref.index_expr("gid", (3, 2))
+    expr = ref.index_expr("gid")
     expected = [0, 0, 1, 1, 2, 2]
     for i in range(6):
       self.assertEqual(eval_index(expr, i), expected[i])
@@ -383,14 +383,9 @@ class TestIndexExpr(unittest.TestCase):
 
   def test_3d_contiguous_sequential(self):
     ref  = BufferRef.from_uop(load((2, 3, 4)))
-    expr = ref.index_expr("gid", (2, 3, 4))
+    expr = ref.index_expr("gid")
     for i in range(24):
       self.assertEqual(eval_index(expr, i), i)
-
-  def test_index_expr_shape_mismatch_raises(self):
-    ref = BufferRef.from_uop(load((3, 4)))
-    with self.assertRaises(AssertionError):
-      ref.index_expr("gid", (2, 4))
 
 
 # **** _collect_inputs ****
