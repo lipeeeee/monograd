@@ -156,4 +156,8 @@ if __name__ == "__main__":
   b = Tensor([3, 2, 1], device="gpu")
   c = (a * 2) + b
   pprint_graph(c)
+
+  from monograd.engine.schedule import run_scheduler, pprint_schedule
+  s = run_scheduler(c.uop)
+  pprint_schedule(s)
   

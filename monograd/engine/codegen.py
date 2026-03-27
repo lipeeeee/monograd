@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from typing import Callable
+from monograd.engine.schedule import BufferRef, KernelTask, TaskKind
 from monograd.dtype import DType, ConstType, dtypes
-from monograd.uop import Ops
-from monograd.engine.schedule import BufferRef, KernelTask
 from monograd.uop.ops import UOp
+from monograd.uop import Ops
 
 # 1. cl_ or c_
 # 2. we never see ops.neg because its decomposed, its ok to remove right?
@@ -36,15 +36,14 @@ CL_OP: dict[Ops, Callable] = {
   Ops.SQRT:   lambda a:       f"sqrt({a})",
   Ops.EXP:    lambda a:       f"exp2({a} * 1.4426950408889634f)",   # exp(x) = exp2(x / ln(2)) = exp2(x * log2(e))
   Ops.LOG:    lambda a:       f"(log2({a}) * 0.6931471805599453f)", # log(x) = log2(x) * ln(2)
+  # Ops.CAST:   None,  # handled specially
   # ternary
   Ops.MULACC: lambda a, b, c: f"fma({a}, {b}, {c})",
   Ops.WHERE:  lambda a, b, c: f"({a} ? {b} : {c})",
-
-  #
-  # Ops.NEG:    lambda a:       f"(-{a})",
-  # Ops.CAST:   None,  # handled specially
 }
 
+
+# *** rendering helpers ****
 def cl_type(dtype:DType) -> str: return dtype.name
 def cl_const(val:ConstType, dtype:DType) -> str:
   if dtype is dtypes.bool: return "1" if val else "0"
@@ -64,9 +63,37 @@ def render_op(uop:UOp, src_exprs:list[str]) -> str:
   if uop.op is Ops.CONST: return cl_const(uop.arg[0], uop.dtype) 
   if uop.op is Ops.CAST:
     assert len(src_exprs) == 1, "cast received more than 1 arg when rendering"
-    return f"({cl_type(uop.dtype)})src_exprs[0]"
-  # atp we try to call CL_OP
+    return f"({cl_type(uop.dtype)}){src_exprs[0]}"
   assert uop.op in CL_OP, "unhandled op in render_op"
   return CL_OP[uop.op](*src_exprs)
 
 
+# add(add(a, b), c)
+# valmap needs gid 
+
+# **** actual codegen ****
+def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # kernel body
+  lines:list[str] = []
+  for i, op in enumerate(uops):
+    var = f"v{i}"
+    src_exprs:list[str] = []
+    for src in op.src:
+      if src.op is Ops.CONST: src_exprs.append(cl_const(src.arg[0], src.dtype))
+      elif id(src) in val_map: src_exprs.append(val_map[id(src)])
+      else: raise RuntimeError(f"src {src.op} not in val_map - toposort broken?")
+    lines.append(f" {cl_type(op.dtype)} {var} = {render_op(op, src_exprs)};")
+    val_map[id(op)] = var
+  return lines
+def codegen(task:KernelTask) -> CompiledKernel:
+  if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
+  raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
+def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
+  k_name = "kernel1"
+  inputs = [f"__global const {cl_type(inp.uop.dtype)} in{i}*" for i, inp in enumerate(task.inputs)]
+  line = f"__kernel void {k_name}({', '.join(inputs)})"+" {\n"
+  val_map:dict[int, str] = {}
+  for i, buff in enumerate(task.inputs):
+    var = f"in{i}"
+    id_expr = 
+    val_map[id(buff.uop)] = var
+  
