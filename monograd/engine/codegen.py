@@ -3,7 +3,8 @@ from typing import Callable
 from monograd.engine.schedule import BufferRef, KernelTask, TaskKind
 from monograd.dtype import DType, ConstType, dtypes
 from monograd.uop.ops import UOp
-from monograd.uop import Ops
+from monograd.uop import GroupOp, Ops
+from monograd.utils import DEBUG
 
 # 1. cl_ or c_
 # 2. we never see ops.neg because its decomposed, its ok to remove right?
@@ -59,17 +60,23 @@ def render_pragmas(task:KernelTask) -> str:
   if dtypes.float16 in all_dtypes: lines.append("#pragma OPENCL EXTENSION cl_khr_fp16 : enable")
   if dtypes.float64 in all_dtypes: lines.append("#pragma OPENCL EXTENSION cl_khr_fp64 : enable")
   return "\n".join(lines) + ("\n" if len(lines) > 0 else "")
+def kernel_name(task:KernelTask) -> str:
+  kind = task.kind.name.lower()
+  ops = "_".join(u.op.name.lower() for u in task.ops)
+  shape = "x".join(str(s) for s in task.output_shape)
+  return f"{kind}_{ops}_{shape}"
+def _resolve_base(uop:UOp) -> UOp:
+  cur = uop
+  while cur.op in GroupOp.Movement: cur = cur.src[0]
+  return cur
 def render_op(uop:UOp, src_exprs:list[str]) -> str:
   if uop.op is Ops.CONST: return cl_const(uop.arg[0], uop.dtype) 
   if uop.op is Ops.CAST:
     assert len(src_exprs) == 1, "cast received more than 1 arg when rendering"
     return f"({cl_type(uop.dtype)}){src_exprs[0]}"
-  assert uop.op in CL_OP, "unhandled op in render_op"
+  assert uop.op in CL_OP, f"unhandled op in render_op: {uop.op}"
   return CL_OP[uop.op](*src_exprs)
 
-
-# add(add(a, b), c)
-# valmap needs gid 
 
 # **** actual codegen ****
 def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # kernel body
@@ -78,9 +85,10 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # kern
     var = f"v{i}"
     src_exprs:list[str] = []
     for src in op.src:
-      if src.op is Ops.CONST: src_exprs.append(cl_const(src.arg[0], src.dtype))
-      elif id(src) in val_map: src_exprs.append(val_map[id(src)])
-      else: raise RuntimeError(f"src {src.op} not in val_map - toposort broken?")
+      _base = _resolve_base(src) # NOTE: this sucks because we are looping through move ops, can improve?
+      if _base.op is Ops.CONST: src_exprs.append(cl_const(_base.arg[0], _base.dtype))
+      elif id(_base) in val_map: src_exprs.append(val_map[id(_base)])
+      else: raise RuntimeError(f"src {_base.op} not in val_map - toposort broken?")
     lines.append(f" {cl_type(op.dtype)} {var} = {render_op(op, src_exprs)};")
     val_map[id(op)] = var
   return lines
@@ -88,12 +96,17 @@ def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
-  k_name = "kernel1"
-  inputs = [f"__global const {cl_type(inp.uop.dtype)} in{i}*" for i, inp in enumerate(task.inputs)]
-  line = f"__kernel void {k_name}({', '.join(inputs)})"+" {\n"
+  inputs:list[str] = []
   val_map:dict[int, str] = {}
   for i, buff in enumerate(task.inputs):
+    # NOTE: do not generate variable lines for each input and hope compiler catches them and makes them 1 memory read only
     var = f"in{i}"
-    id_expr = 
-    val_map[id(buff.uop)] = var
-  
+    inputs.append(f"__global const {cl_type(buff.uop.dtype)} in{i}*") # NOTE: can i generate the signature's inputs here?
+    val_map[id(buff.uop)] = f"{var}[{buff.index_expr('gid')}]"
+  signature:str = f"__kernel void {kernel_name(task)}({', '.join(inputs)})"+" {"
+  kernel_body:str = "\n".join(render_op_chain(task.ops, val_map))
+  if DEBUG >= 1: # kernel printing
+    print(task.ops)
+    print(val_map)
+    print(signature)
+    print(kernel_body + "\n}")
