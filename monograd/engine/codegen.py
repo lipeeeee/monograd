@@ -1,14 +1,12 @@
 from dataclasses import dataclass
 from typing import Callable
+from math import prod
 from monograd.engine.schedule import BufferRef, KernelTask, TaskKind
 from monograd.dtype import DType, ConstType, dtypes
 from monograd.uop.ops import UOp
 from monograd.uop import GroupOp, Ops
 from monograd.utils import DEBUG
 
-# 1. cl_ or c_
-# 2. we never see ops.neg because its decomposed, its ok to remove right?
-# 3. try to remove first assert in `render_op`
 
 @dataclass
 class CompiledKernel:
@@ -50,7 +48,7 @@ def cl_const(val:ConstType, dtype:DType) -> str:
   if dtype is dtypes.bool: return "1" if val else "0"
   if dtypes.is_float(dtype): # handle weirdness of c99 llvm when casting floats
     if dtype is dtypes.half: return f"{float(val)}h"
-    if dtype is dtypes.float: return f"{float(val)}f"
+    if dtype is dtypes.float: return f"({cl_type(dtype)}{float(val)}f" # opencl does (half)1.0f
     if dtype is dtypes.double: return f"{float(val)}"
   assert not dtypes.is_float(dtype), f"unhandled float dtype: {dtype}"
   return f"({cl_type(dtype)})({int(val)})"
@@ -85,28 +83,41 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # kern
     var = f"v{i}"
     src_exprs:list[str] = []
     for src in op.src:
-      _base = _resolve_base(src) # NOTE: this sucks because we are looping through move ops, can improve?
+      _base = _resolve_base(src)
       if _base.op is Ops.CONST: src_exprs.append(cl_const(_base.arg[0], _base.dtype))
       elif id(_base) in val_map: src_exprs.append(val_map[id(_base)])
       else: raise RuntimeError(f"src {_base.op} not in val_map - toposort broken?")
-    lines.append(f" {cl_type(op.dtype)} {var} = {render_op(op, src_exprs)};")
+    lines.append(f"  {cl_type(op.dtype)} {var} = {render_op(op, src_exprs)};")
     val_map[id(op)] = var
   return lines
 def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
-  inputs:list[str] = []
+  name = kernel_name(task)
+  n = prod(task.output_shape)
   val_map:dict[int, str] = {}
+  args:list[str]  = []
+  # input args
   for i, buff in enumerate(task.inputs):
     # NOTE: do not generate variable lines for each input and hope compiler catches them and makes them 1 memory read only
-    var = f"in{i}"
-    inputs.append(f"__global const {cl_type(buff.uop.dtype)} in{i}*") # NOTE: can i generate the signature's inputs here?
-    val_map[id(buff.uop)] = f"{var}[{buff.index_expr('gid')}]"
-  signature:str = f"__kernel void {kernel_name(task)}({', '.join(inputs)})"+" {"
-  kernel_body:str = "\n".join(render_op_chain(task.ops, val_map))
-  if DEBUG >= 1: # kernel printing
-    print(task.ops)
-    print(val_map)
-    print(signature)
-    print(kernel_body + "\n}")
+    args.append(f"__global const {cl_type(buff.uop.dtype)}* in{i}")
+    val_map[id(buff.uop)] = f"in{i}[{buff.index_expr('gid')}]"
+  args.append(f"__global {cl_type(task.output_dtype)}* out")
+  args.append("const int n")
+  sig:str = f"__kernel void {kernel_name(task)}({', '.join(args)})"
+  body:str = render_op_chain(task.ops, val_map)
+  last:str = f"v{len(task.ops) - 1}"
+  lines = [
+    render_pragmas(task),
+    f"{sig} {{",
+    "  int gid = get_global_id(0);",
+    "  if (gid >= n) return;",
+    *body,
+    f"  out[gid] = {last};",
+    "}",
+  ]
+  source = "\n".join(lines)
+  if DEBUG >= 1: print(source)
+  return CompiledKernel(source = source, name = name, global_size  = (n,), local_size   = None,
+                        args = task.inputs, output_shape = task.output_shape, output_dtype = task.output_dtype)
