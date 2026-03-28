@@ -86,8 +86,8 @@ _FOLD_OPS: dict[Ops, Callable] = {
   Ops.MAX: max,
 }
 def _fold_consts(x:UOp, y:UOp, z:UOp) -> UOp:
-  assert isinstance(x.arg, (int, float)) and isinstance(y.arg, (int, float)), f"why isn't CONST.arg not a number?"
-  return UOp(Ops.CONST, z.dtype, (), _FOLD_OPS[z.op](x.arg, y.arg))
+  assert isinstance(x.arg[0], (int, float)) and isinstance(y.arg[0], (int, float)), f"why isn't CONST.arg a number?"
+  return UOp(Ops.CONST, z.dtype, (), (_FOLD_OPS[z.op](x.arg[0], y.arg[0]), z.device))
 FOLD_CONSTS = (
   UPat(set(_FOLD_OPS.keys()), src=[UPat(Ops.CONST, name="x"), UPat(Ops.CONST, name="y")], name="z"),
   _fold_consts
@@ -96,7 +96,7 @@ FOLD_CONSTS = (
 # identity: x + identity(ADD) -> x
 def _elim_identity(x:UOp, y:UOp, z:UOp) -> UOp|None:
   try:
-    if y.arg == identity_element(z.op, z.dtype): return x
+    if y.arg[0] == identity_element(z.op, z.dtype): return x
   except KeyError: return None
   return None
 ELIM_IDENTITY = (
@@ -109,9 +109,9 @@ ELIM_IDENTITY = (
 # absorbing: x * absorbing(MUL) -> absorbing(MUL)
 def _elim_absorbing(x:UOp, y:UOp, z:UOp) -> UOp | None:
   try:
-    if y.arg == absorbing_element(z.op, z.dtype): 
+    if y.arg[0] == absorbing_element(z.op, z.dtype): 
       if y.dtype == z.dtype: return y
-      return UOp(Ops.CONST, z.dtype, (), y.arg) # NOTE: this makes cast a noop when the type mismatches!!! actually genius
+      return UOp(Ops.CONST, z.dtype, (), (y.arg[0], z.device)) # NOTE: this makes cast a noop when the type mismatches!!! actually genius
   except KeyError: return None
   return None
 ELIM_ABSORBING = (
@@ -132,7 +132,7 @@ ELIM_DOUBLE_CAST = (
 # POW(x, CONST(2)) -> MUL(x, x)
 # pow() is expensive
 def _strength_reduce_pow2(x:UOp, y:UOp, z:UOp) -> UOp|None:
-  if y.arg == 2.0: return UOp(Ops.MUL, z.dtype, (x, x), z.arg)
+  if y.arg[0] == 2.0: return UOp(Ops.MUL, z.dtype, (x, x), z.arg)
   return None
 STRENGTH_REDUCE_POW2 = (
   UPat(Ops.POW, src=[UPat(name="x"), UPat(Ops.CONST, name="y")], name="z"),
@@ -142,7 +142,7 @@ STRENGTH_REDUCE_POW2 = (
 # MUL(MUL(x, CONST(-1)), CONST(-1)) -> x
 # double negation
 def _elim_double_neg(inner_x:UOp, c1:UOp, c2:UOp) -> UOp|None:
-  if c1.arg == -1.0 and c2.arg == -1.0: return inner_x
+  if c1.arg[0] == -1.0 and c2.arg[0] == -1.0: return inner_x
   return None
 ELIM_DOUBLE_NEG = (
   UPat(Ops.MUL,
@@ -154,7 +154,7 @@ ELIM_DOUBLE_NEG = (
 
 # fold const recips
 def _fold_recip_const(x:UOp, z:UOp) -> UOp|None:
-  if x.arg != 0: return UOp(Ops.CONST, z.dtype, (), 1.0 / x.arg)
+  if x.arg[0] != 0: return UOp(Ops.CONST, z.dtype, (), (1.0 / x.arg[0], z.device))
   return None
 FOLD_RECIP_CONST = (
   UPat(Ops.RECIP, src=[UPat(Ops.CONST, name="x")], name="z"),
