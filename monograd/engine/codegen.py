@@ -18,7 +18,8 @@ class CompiledKernel:
   output_shape: tuple[int, ...]
   output_dtype: DType 
 
-  def __repr__(self): return f"CompiledKernel(global_size={self.global_size}, local_size={self.local_size}, output_shape={self.output_shape}, source=\n{self.source})"
+  def __repr__(self):
+    return f"CompiledKernel(global_size={self.global_size}, local_size={self.local_size}, output_shape={self.output_shape}, source=\n{self.source})"
 
 CL_OP: dict[Ops, Callable] = {
   # binary

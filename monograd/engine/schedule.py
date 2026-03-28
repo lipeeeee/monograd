@@ -86,7 +86,6 @@ class BufferRef:
         strides = tuple(strides[i] for i in order)
     ret = BufferRef(cur, shape, strides)
     _bufferref_cache[uop] = ret
-    if DEBUG >= 4: print(f"BufferRef.from_uop creating reference: {ret}")
     return ret
   def index_expr(self, gid:str="gid") -> str: # generates C index expr
     if is_scalar(self.uop, self.strides): return "0"

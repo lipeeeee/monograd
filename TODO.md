@@ -18,17 +18,25 @@
 - minimize ram/vram access because it's slow
 - We aren't caching LOAD ops, not sure if in the future its worth it to make them cachable
 
-- Debug stuff
-- look for cache optims
+- !look for cache optims!
 - test optimize.py
+
+# Debug levels
+- DEBUG >= 1 — High level execution flow
+Kernel source after generation, schedule summary (how many tasks, what kinds), graph roots when .numpy() is called.
+- DEBUG >= 2 — Per-task details
+KernelTask pretty-print, BufferRef strides for each input, which rules fired in the rewriter.
+- DEBUG >= 3 — Internal state
+val_map contents, render_op_chain intermediate expressions, UPat match captures.
+- DEBUG >= 4 — Very noisy internals
+Every BufferRef created, every UOp cache hit/miss, every rule attempted (not just matched).
 
 # important
 - GlobalCounters for mem_used;global_ops;global_mem;kernel_count;
 - environmentalize/globalize data/ folder for downloding and caching (is it a good name?)
-- UPAT to lower number of gpu instructions, see tinygrad
-- If user doesnt have pyopencl installed, we extract it via ctypes(not very supported )
 
 
 # unimportant
 - tensor fns such as zeros(), arrange(), ones(), randn()
 - mnist.py should be cleaned
+- If user doesnt have pyopencl installed, we extract it via ctypes(not very supported )
