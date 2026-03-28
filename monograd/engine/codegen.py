@@ -96,30 +96,22 @@ def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
-  name = kernel_name(task)
-  n = prod(task.output_shape)
+  name:str = kernel_name(task)
+  n:int = prod(task.output_shape)
   val_map:dict[int, str] = {}
-  args:list[str]  = []
-  # input args
-  for i, buff in enumerate(task.inputs):
-    # NOTE: do not generate variable lines for each input and hope compiler catches them and makes them 1 memory read only
+  args:list[str] = []
+  for i, buff in enumerate(task.inputs): # NOTE: do not generate variable lines for each input and hope compiler catches them and makes them 1 memory read only
     args.append(f"__global const {cl_type(buff.uop.dtype)}* in{i}")
     val_map[id(buff.uop)] = f"in{i}[{buff.index_expr('gid')}]"
-  args.append(f"__global {cl_type(task.output_dtype)}* out")
-  args.append("const int n")
-  sig:str = f"__kernel void {kernel_name(task)}({', '.join(args)})"
-  body:str = render_op_chain(task.ops, val_map)
-  last:str = f"v{len(task.ops) - 1}"
-  lines = [
-    render_pragmas(task),
-    f"{sig} {{",
-    "  int gid = get_global_id(0);",
-    "  if (gid >= n) return;",
-    *body,
-    f"  out[gid] = {last};",
-    "}",
-  ]
-  source = "\n".join(lines)
+  args.extend([f"__global {cl_type(task.output_dtype)}* out", "const int n"])
+  body:str = "\n".join(render_op_chain(task.ops, val_map))
+  source:str = f"""{render_pragmas(task)}
+__kernel void {name}({', '.join(args)}) {{
+  int gid = get_global_id(0);
+  if (gid >= n) return;
+{body}
+  out[gid] = v{len(task.ops) - 1};
+}}"""
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
