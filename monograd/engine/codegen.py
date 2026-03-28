@@ -91,6 +91,7 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # kern
       elif id(_base) in val_map: src_exprs.append(val_map[id(_base)])
       else: raise RuntimeError(f"src {_base.op} not in val_map - toposort broken?")
     lines.append(f"  {cl_type(op.dtype)} {var} = {render_op(op, src_exprs)};")
+    if DEBUG >= 5: print(f"{op.op.name}({op.src}) -> {lines[-1].strip()}")
     val_map[id(op)] = var
   return lines
 def codegen(task:KernelTask) -> CompiledKernel:
