@@ -19,7 +19,7 @@
 - We aren't caching LOAD ops, not sure if in the future its worth it to make them cachable
 
 - !look for cache optims!
-- test optimize.py
+- opencl kernel profiling/benchmarking into saving optimal params
 
 # Debug levels
 - DEBUG >= 1 — High level execution flow
