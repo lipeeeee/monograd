@@ -17,6 +17,9 @@
 - Kernel compile caching
 - minimize ram/vram access because it's slow
 - We aren't caching LOAD ops, not sure if in the future its worth it to make them cachable
+- choosing kernel opts
+    - global_size: round_up_multipleof2(len(data)) if len(data) <= gpu_compute_units * gpu_max_threads else gpu_compute_units * gpu_max_threads
+    - local_size: gpu warp constraints. Maybe change for amd vs nvidia / 256 is good default
 
 - !look for cache optims!
 - opencl kernel profiling/benchmarking into saving optimal params
