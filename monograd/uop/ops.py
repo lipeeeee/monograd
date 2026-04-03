@@ -71,5 +71,5 @@ class UOp(metaclass=UOpMetaClass):
     return f"<UOp {self.op} dtype={self.dtype.name} arg={self.arg}>"
 
 # https://en.wikipedia.org/wiki/Identity_element & https://en.wikipedia.org/wiki/Absorbing_element
-def identity_element(op:Ops, dt:DType) -> ConstType: return { Ops.ADD: 0, Ops.MUL: 1, Ops.MAX: dt.min}[op]
+def identity_element(op:Ops, dt:DType) -> ConstType: return { Ops.ADD: 0, Ops.MUL: 1, Ops.MAX: dt.min, Ops.SUM: 0, Ops.REDUCEMAX: dt.min}[op]
 def absorbing_element(op:Ops, dt:DType) -> ConstType: return { Ops.MUL: 0, Ops.AND: False, Ops.MAX: dt.max}[op]

@@ -36,7 +36,7 @@ class MathMixin:
   def recip(self) -> Self: return self._unop(Ops.RECIP)
   # red
   def sum(self, axis:int|tuple[int, ...]|None=None, keepdim:bool=False): return self._reduceop(Ops.SUM, axis, keepdim)
-  def maxreduce(self): raise NotImplementedError # proably needs axis and keepdim and keep it the same as sum
+  def max(self, axis:int|tuple[int, ...]|None=None, keepdim:bool=False): return self._reduceop(Ops.REDUCEMAX, axis, keepdim)
 
   def __add__(self, x:Self|ConstType):  return self.add(x)
   def __mul__(self, x:Self|ConstType):  return self.mul(x)

@@ -39,6 +39,8 @@ class KernelTask: # what holds scheduled graph (list)
   def output_shape(self) -> tuple[int, ...]: return self.ops[-1].shape
   @property
   def output_device(self) -> Device: return self.ops[-1].device
+  @property
+  def output_uop(self) -> UOp: return self.ops[-1]
 
   def __repr__(self) -> str:
     op_chain = " → ".join(o.op.name for o in self.ops)

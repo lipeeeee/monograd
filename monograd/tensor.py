@@ -155,10 +155,11 @@ if __name__ == "__main__":
   a = Tensor([[1, 2, 3], [4, 5, 6]], device="gpu", dtype="float64")
   b = Tensor([3, 2, 1], device="gpu")
   c = ((a * 2) + b) * 5
-  pprint_graph(c)
+  d = c.max()
+  pprint_graph(d)
 
   from monograd.engine.schedule import run_scheduler, pprint_schedule
-  s = run_scheduler(c.uop)
+  s = run_scheduler(d.uop)
   pprint_schedule(s)
   
   from monograd.engine.codegen import codegen

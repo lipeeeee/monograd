@@ -3,10 +3,13 @@ from typing import Callable
 from math import prod
 from monograd.engine.schedule import BufferRef, KernelTask, TaskKind
 from monograd.dtype import DType, ConstType, dtypes
-from monograd.uop.ops import UOp
+from monograd.uop.ops import UOp, identity_element
 from monograd.uop import GroupOp, Ops
 from monograd.utils import DEBUG
 
+
+# WARN: We shouldnt launch kernels with large global sizes
+# query gpu to figure out limits and adapt (also shouldnt launch not multiple of 2 global sizes)
 
 @dataclass
 class CompiledKernel:
@@ -25,7 +28,6 @@ CL_OP: dict[Ops, Callable] = {
   # binary
   Ops.ADD:    lambda a, b:    f"({a} + {b})",
   Ops.MUL:    lambda a, b:    f"({a} * {b})",
-  Ops.MAX:    lambda a, b:    f"max({a}, {b})",
   Ops.MOD:    lambda a, b:    f"({a} % {b})",
   Ops.POW:    lambda a, b:    f"pow({a}, {b})",
   Ops.XOR:    lambda a, b:    f"({a} ^ {b})",
@@ -42,11 +44,18 @@ CL_OP: dict[Ops, Callable] = {
   # ternary
   Ops.MULACC: lambda a, b, c: f"fma({a}, {b}, {c})",
   Ops.WHERE:  lambda a, b, c: f"({a} ? {b} : {c})",
+  # reduce
+  Ops.REDUCEMAX:    lambda a, b:    f"max({a}, {b})",
+  Ops.SUM:          lambda a, b:    f"{a} + {b}", # this is computed in parallel
 }
 
 
 # *** rendering helpers ****
 def cl_type(dtype:DType) -> str: return dtype.name
+def cl_vfix(v:ConstType): # value fix for python types in opencl kernels
+  if v == -float('inf'): return "-INFINITY"
+  if v == float('inf'): return "INFINITY"
+  return v
 def cl_const(val:ConstType, dtype:DType) -> str:
   if dtype is dtypes.bool: return "1" if val else "0"
   if dtypes.is_float(dtype): # handle weirdness of c99 llvm when casting floats
@@ -96,6 +105,7 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # kern
   return lines
 def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
+  if task.kind is TaskKind.REDUCE: return _codegen_reduce(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
   name:str = kernel_name(task)
@@ -117,3 +127,38 @@ __kernel void {name}({', '.join(args)}) {{
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
+def _codegen_reduce(task:KernelTask, local_size:int=256) -> CompiledKernel:
+  axes      = task.ops[0].arg[0]
+  input_uop = task.ops[0].src[0]
+  if len(axes) == len(input_uop.shape): return _codegen_reduce_full(task, local_size)
+  else: return _codegen_reduce_strided(task, local_size)
+def _codegen_reduce_full(task:KernelTask, local_size) -> CompiledKernel:
+  n:int = prod(task.output_shape)
+  uop:UOp = task.output_uop
+  dtype:str = cl_type(task.output_dtype)
+  name:str = kernel_name(task)
+  source:str = f"""{render_pragmas(task)}
+__kernel void {name}(__global const {dtype}* in, __global {dtype}* out, __local {dtype}* scratch, const int n) {{
+  int lid = get_local_id(0);
+  int gid = get_global_id(0);
+  int g_stride = get_global_size(0);
+  int l_size = get_local_size(0);
+  {dtype} acc = {cl_vfix(identity_element(uop.op, task.output_dtype))};
+  for (int i = gid; i < n; i += g_stride) {{
+    acc = {render_op(uop, ['acc', 'in[i]'])};
+  }}
+  scratch[lid] = acc;
+  barrier(CLK_LOCAL_MEM_FENCE);
+  for (int s = l_size / 2; s > 0; s >>= 1) {{
+    if (lid < s) scratch[lid] = {render_op(uop, ['scratch[lid]', 'scratch[lid + s]'])};
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }}
+  if (lid == 0) {{
+    int group_id = get_group_id(0);
+    out[group_id] = scratch[0];
+  }}
+}}"""
+  if DEBUG >= 1: print(source)
+  return CompiledKernel(source, name, global_size=(n,), local_size=local_size, args=task.inputs, 
+                        output_shape=task.output_shape, output_dtype=task.output_dtype)
+def _codegen_reduce_strided(task:KernelTask, local_size) -> CompiledKernel: ...
