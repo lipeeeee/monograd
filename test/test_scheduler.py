@@ -71,6 +71,10 @@ def eval_index(expr: str, gid: int) -> int:
   """evaluate a C index expression as Python integer division"""
   return eval(expr.replace("/", "//"), {"gid": gid})
 
+def eval_reduce_index(expr: str, gid: int, k: int) -> int:
+  """evaluate a C reduce index expression as Python integer division"""
+  return eval(expr.replace("/", "//"), {"gid": gid, "k": k})
+
 def tasks_kinds(root: UOp) -> list[TaskKind]:
   return [t.kind for t in run_scheduler(root)]
 
@@ -386,6 +390,63 @@ class TestIndexExpr(unittest.TestCase):
     expr = ref.index_expr("gid")
     for i in range(24):
       self.assertEqual(eval_index(expr, i), i)
+
+
+# **** BufferRef.reduce_index_expr ****
+class TestReduceIndexExpr(unittest.TestCase):
+  def test_reduce_axis_0_2d(self):
+    """Shape (3, 4) reduce axis 0. Output shape (4,). gid goes 0-3, k goes 0-2."""
+    ref = BufferRef.from_uop(load((3, 4)))
+    expr = ref.reduce_index_expr(reduce_axis=0)
+    # Expected: k * 4 + gid
+    for gid in range(4):
+      for k in range(3):
+        self.assertEqual(eval_reduce_index(expr, gid, k), k * 4 + gid)
+
+  def test_reduce_axis_1_2d(self):
+    """Shape (3, 4) reduce axis 1. Output shape (3,). gid goes 0-2, k goes 0-3."""
+    ref = BufferRef.from_uop(load((3, 4)))
+    expr = ref.reduce_index_expr(reduce_axis=1)
+    # Expected: gid * 4 + k
+    for gid in range(3):
+      for k in range(4):
+        self.assertEqual(eval_reduce_index(expr, gid, k), gid * 4 + k)
+
+  def test_reduce_middle_axis_3d(self):
+    """Shape (2, 3, 4) reduce axis 1. Output (2, 4) -> 8 threads."""
+    ref = BufferRef.from_uop(load((2, 3, 4)))
+    expr = ref.reduce_index_expr(reduce_axis=1)
+    # Input strides: (12, 4, 1)
+    # Formula: (gid // 4) * 12 + k * 4 + (gid % 4)
+    for gid in range(8):
+      for k in range(3):
+        expected = (gid // 4) * 12 + k * 4 + (gid % 4)
+        self.assertEqual(eval_reduce_index(expr, gid, k), expected)
+
+  def test_transposed_reduce(self):
+    """Permute (3, 4) to (4, 3), reduce axis 0."""
+    a = load((3, 4))
+    p = permute(a, (1, 0))
+    ref = BufferRef.from_uop(p)
+    expr = ref.reduce_index_expr(reduce_axis=0)
+    # Original strides: (4, 1). New shape: (4, 3). New strides: (1, 4).
+    # Expected: k * 1 + gid * 4
+    for gid in range(3):
+      for k in range(4):
+        self.assertEqual(eval_reduce_index(expr, gid, k), k * 1 + gid * 4)
+
+  def test_broadcast_reduce(self):
+    """Expand (1, 4) to (3, 4), reduce axis 0."""
+    a = load((4,))
+    r = reshape(a, (1, 4))
+    e = expand(r, (3, 4))
+    ref = BufferRef.from_uop(e)
+    expr = ref.reduce_index_expr(reduce_axis=0)
+    # Shape: (3, 4). Strides: (0, 1).
+    # Since stride 0 is 0, 'k * 0' is skipped in the expression string.
+    for gid in range(4):
+      for k in range(3):
+        self.assertEqual(eval_reduce_index(expr, gid, k), gid)
 
 
 # **** _collect_inputs ****

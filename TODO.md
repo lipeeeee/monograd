@@ -22,6 +22,9 @@
     - local_size: gpu warp constraints. Maybe change for amd vs nvidia / 256 is good default
 - assert codegen uses 'gid' when writting indexes and that we are generating 'gid' in every kernel
 - make DEBUG >= 1 print(source) into 1 line
+- Missing Memory Pool: device.py directly allocates a new OpenCL buffer for every operation. During a training loop, this will cause severe VRAM fragmentation and massive allocation overhead. A memory pool that reuses identically sized allocations is required.
+- The Buffer class supports offsets and bases (self._base), but this logic is not fully integrated with the execution engine. If a KernelTask operates on a memory view, the codegen must inject the offset into the physical address calculation.
+- _collect_inputs iterates through the sources of every operation in the group. For large fused groups, this scales poorly. Replacing the nested loops with a set-based traversal will reduce scheduler overhead.
 
 - !look for cache optims!
 - opencl kernel profiling/benchmarking into saving optimal params
