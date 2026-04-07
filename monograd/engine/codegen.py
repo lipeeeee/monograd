@@ -132,7 +132,7 @@ def _codegen_reduce(task:KernelTask, local_size:int=256) -> CompiledKernel:
   input_uop = task.ops[0].src[0]
   if len(axes) == len(input_uop.shape): return _codegen_reduce_full(task, local_size)
   else: return _codegen_reduce_strided(task, local_size)
-def _codegen_reduce_full(task:KernelTask, local_size) -> CompiledKernel:
+def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
   n:int = prod(task.output_shape)
   uop:UOp = task.output_uop
   dtype:str = cl_type(task.output_dtype)
@@ -159,6 +159,6 @@ __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, __local 
   }}
 }}"""
   if DEBUG >= 1: print(source)
-  return CompiledKernel(source, name, global_size=(n,), local_size=local_size, args=task.inputs, 
+  return CompiledKernel(source, name, global_size=(n,), local_size=(local_size,), args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
-def _codegen_reduce_strided(task:KernelTask, local_size) -> CompiledKernel: ...
+def _codegen_reduce_strided(task:KernelTask, local_size:int) -> CompiledKernel: ...

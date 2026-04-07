@@ -95,7 +95,7 @@ class BufferRef:
     # e.g. for output_shape=(2,3):
     #   dim 0: coord = gid / 3
     #   dim 1: coord = gid % 3
-    coords: list[str] = []
+    coords:list[str] = []
     remaining = gid
     for i, dim_size in enumerate(self.shape):
       below = prod(self.shape[i+1:])  # product of all dims below this one
@@ -105,13 +105,37 @@ class BufferRef:
         remaining = f"({remaining} % {below})"
     # build flat index from strides
     # skip dims where stride is 0 (broadcast — contributes nothing)
-    terms: list[str] = []
+    terms:list[str] = []
     for coord, stride in zip(coords, self.strides):
       if stride == 0: continue # broadcast dim, skip
       elif stride == 1: terms.append(coord)
       else: terms.append(f"{coord} * {stride}")
     if not terms: return "0"
     return " + ".join(terms)
+  def reduce_index_expr(self, reduce_axis:int, gid:str="gid") -> str:
+    # get the shape of the output (gid domain) by removing the reduced axis
+    output_shape = list(self.shape)
+    output_shape.pop(reduce_axis)
+    # unpack 'gid' based strictly on the OUTPUT shape
+    gid_coords:list[str] = []
+    remaining = gid
+    for i in range(len(output_shape)):
+      below = prod(output_shape[i+1:])
+      if below == 1: 
+        gid_coords.append(remaining)
+      else:
+        gid_coords.append(f"({remaining} / {below})")
+        remaining = f"({remaining} % {below})"
+    # re-insert the loop variable 'k' at the reduced axis position
+    input_coords = list(gid_coords)
+    input_coords.insert(reduce_axis, "k")
+    # multiply by the INPUT strides to get the flat physical address
+    terms: list[str] = []
+    for coord, stride in zip(input_coords, self.strides):
+      if stride == 0: continue
+      elif stride == 1: terms.append(coord)
+      else: terms.append(f"{coord} * {stride}")
+    return " + ".join(terms) if terms else "0"
   def __repr__(self):
     return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
 

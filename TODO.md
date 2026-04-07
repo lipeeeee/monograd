@@ -20,6 +20,8 @@
 - choosing kernel opts
     - global_size: round_up_multipleof2(len(data)) if len(data) <= gpu_compute_units * gpu_max_threads else gpu_compute_units * gpu_max_threads
     - local_size: gpu warp constraints. Maybe change for amd vs nvidia / 256 is good default
+- assert codegen uses 'gid' when writting indexes and that we are generating 'gid' in every kernel
+- make DEBUG >= 1 print(source) into 1 line
 
 - !look for cache optims!
 - opencl kernel profiling/benchmarking into saving optimal params
