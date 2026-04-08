@@ -10,6 +10,7 @@ from monograd.utils import DEBUG
 
 # WARN: We shouldnt launch kernels with large global sizes
 # query gpu to figure out limits and adapt (also shouldnt launch not multiple of 2 global sizes)
+_local_size_tmp = 256 # NOTE: local_size should be computed
 
 @dataclass
 class CompiledKernel:
@@ -127,11 +128,11 @@ __kernel void {name}({', '.join(args)}) {{
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
-def _codegen_reduce(task:KernelTask, local_size:int=256) -> CompiledKernel:
-  axes      = task.ops[0].arg[0]
-  input_uop = task.ops[0].src[0]
-  if len(axes) == len(input_uop.shape): return _codegen_reduce_full(task, local_size)
-  else: return _codegen_reduce_strided(task, local_size)
+def _codegen_reduce(task:KernelTask) -> CompiledKernel:
+  axes:tuple[int, ...]  = task.ops[0].arg[0]
+  input_uop:UOp         = task.ops[0].src[0]
+  if len(axes) == len(input_uop.shape): return _codegen_reduce_full(task, local_size=_local_size_tmp)
+  else: return _codegen_reduce_strided(task)
 def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
   n:int = prod(task.output_shape)
   uop:UOp = task.output_uop
@@ -161,4 +162,25 @@ __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, __local 
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=(local_size,), args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
-def _codegen_reduce_strided(task:KernelTask, local_size:int) -> CompiledKernel: ...
+def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
+  n:int = prod(task.output_shape)
+  uop:UOp = task.output_uop
+  name:str = kernel_name(task)
+  dtype:str = cl_type(task.output_dtype)
+  input_buf:BufferRef = task.inputs[0]
+  axis:int = task.ops[0].arg[0][0] 
+  assert isinstance(axis, int)
+  source:str = f"""{render_pragmas(task)}
+__kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
+    int gid = get_global_id(0);
+    if (gid >= n) return;
+    {dtype} acc = {cl_vfix(identity_element(uop.op, task.output_dtype))};
+    for (int k = 0; k < {input_buf.shape[axis]}; k++) {{ // k < reduce_size
+        int input_idx = {input_buf.reduce_index_expr(axis)}; 
+        acc = {render_op(uop, ['acc', 'in[input_idx]'])};
+    }}
+    out[gid] = acc;
+}}"""
+  if DEBUG >= 1: print(source)
+  return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
+                        output_shape=task.output_shape, output_dtype=task.output_dtype)

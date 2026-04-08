@@ -5,12 +5,14 @@
 </div>
 
 ---
-
 ### Monograd supports
 - **Tensor library** and API
 - Reverse-mode **autograd** differentiation with a dynamic graph (DAG)
 - ~~JIT GPU Kernel compiler~~
 - **nn / optim / datasets** for training
+
+The architectural foundation of monograd strictly follows a modern compiler-based design.
+
 
 It is a lightweight, define-by-run deep learning framework built from scratch. Designed to be readable and hackable. It's a very small framework aimed at simplicity that can train real networks to high accuracy.
 
