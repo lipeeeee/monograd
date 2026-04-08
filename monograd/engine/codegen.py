@@ -54,6 +54,7 @@ CL_OP: dict[Ops, Callable] = {
 # *** rendering helpers ****
 def cl_type(dtype:DType) -> str: return dtype.name
 def cl_vfix(v:ConstType): # value fix for python types in opencl kernels
+  # TODO: handle adding suffixes to dtypes? (f, h, etc.)
   if v == -float('inf'): return "-INFINITY"
   if v == float('inf'): return "INFINITY"
   return v
@@ -90,7 +91,7 @@ def render_op(uop:UOp, src_exprs:list[str]) -> str:
 
 
 # **** actual codegen ****
-def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # kernel body
+def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # elem-wise kernel body
   lines:list[str] = []
   for i, op in enumerate(uops):
     var = f"v{i}"
@@ -172,14 +173,14 @@ def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
   assert isinstance(axis, int)
   source:str = f"""{render_pragmas(task)}
 __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
-    int gid = get_global_id(0);
-    if (gid >= n) return;
-    {dtype} acc = {cl_vfix(identity_element(uop.op, task.output_dtype))};
-    for (int k = 0; k < {input_buf.shape[axis]}; k++) {{ // k < reduce_size
-        int input_idx = {input_buf.reduce_index_expr(axis)}; 
-        acc = {render_op(uop, ['acc', 'in[input_idx]'])};
-    }}
-    out[gid] = acc;
+  int gid = get_global_id(0);
+  if (gid >= n) return;
+  {dtype} acc = {cl_vfix(identity_element(uop.op, task.output_dtype))};
+  for (int k = 0; k < {input_buf.shape[axis]}; k++) {{ // k < reduce_size
+    int input_idx = {input_buf.reduce_index_expr(axis)}; 
+    acc = {render_op(uop, ['acc', 'in[input_idx]'])};
+  }}
+  out[gid] = acc;
 }}"""
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 

@@ -10,6 +10,7 @@
     - also pre-compiled kernels? maybe it doesn't result in any perf gain but still interesting
 - new op: V(vector)CONST, makes expand a noop, even if it has no cost(does it have cost or is EXPAND free/boundary?)
 - .to() creates COPY OP before realize, it should be a NOOP, maybe not.
+- ZeroCopy padding
 
 - compgt complt
     - then decompose rest
