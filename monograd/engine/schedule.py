@@ -21,7 +21,7 @@ def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
 def is_scalar(uop:UOp , strides=(1,)) -> bool: return uop.op is Ops.CONST or all(s == 0 for s in strides)
 def is_fusable(uop:UOp) -> bool: return uop.op in GroupOp.Unary | GroupOp.Binary # NOTE: Not checking CAST because it is in Unary
 def is_invisible(uop:UOp) -> bool: return uop.op in GroupOp.Movement
-def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | GroupOp.Reduce | {Ops.COPY}
+def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | GroupOp.Reduce | {Ops.COPY, Ops.CONTIGUOUS}
 
 class TaskKind(IntEnum):
   ELEMENTWISE = auto(); REDUCE = auto(); BLAS = auto(); COPY = auto()
@@ -157,7 +157,10 @@ def run_scheduler(root:UOp) -> list[KernelTask]:
     elif is_fusable(node): current_group.append(node)
     elif is_boundary(node):
       _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)
-      kind = TaskKind.BLAS if node.op in GroupOp.BLAS else TaskKind.REDUCE if node.op in GroupOp.Reduce else TaskKind.COPY if node.op is Ops.COPY else None
+      kind:TaskKind|None = None
+      if node.op in GroupOp.BLAS: kind = TaskKind.BLAS
+      elif node.op in GroupOp.Reduce: kind = TaskKind.REDUCE
+      elif node.op in {Ops.COPY, Ops.CONTIGUOUS}: kind = TaskKind.COPY
       assert kind is not None, "could not determine boundary node kind {node}"
       scheduled_kernels.append(KernelTask(kind, [node], _collect_inputs([node]))) # manual flush
   _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels) # flush any remaining ops

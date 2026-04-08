@@ -9,8 +9,8 @@ class Ops(IntEnum):
   # Unary Ops
   RELU = auto(); LOG = auto(); EXP = auto()
   SIN = auto(); SQRT = auto(); CAST = auto()
-  RECIP = auto() # recip is a fast gpu operation (1.0f/val)
-    
+  CONTIGUOUS = auto(); RECIP = auto() # recip is a fast gpu operation (1.0f/val)
+
   # Binary Ops
   ADD = auto(); MUL = auto();
   MAX = auto(); POW = auto(); MOD = auto()
@@ -33,7 +33,7 @@ class Ops(IntEnum):
   def __repr__(self): return str(self)
 
 class GroupOp:
-  Unary = {Ops.SIN, Ops.SQRT, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP, Ops.RECIP}
+  Unary = {Ops.SIN, Ops.SQRT, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP, Ops.RECIP, Ops.CONTIGUOUS}
   Binary = {Ops.ADD, Ops.MUL, Ops.MOD, Ops.MAX, Ops.XOR, Ops.OR, Ops.AND, Ops.POW}
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)

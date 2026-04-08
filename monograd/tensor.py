@@ -5,7 +5,7 @@ from monograd.mixin import OpMixin
 from monograd.mixin.movement import _align_left
 from monograd.device import Device, DeviceLike, to_device
 from monograd.dtype import ConstType, DType, DTypeLike, dtypes, from_np_dtype, most_upper_dtype, to_dtype
-from monograd.uop import Ops
+from monograd.uop import GroupOp, Ops
 from monograd.uop.ops import UOp
 import numpy as np
 
@@ -55,6 +55,7 @@ class Tensor(OpMixin):
 
   def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
   def _reduceop(self, op:Ops, axis:int|tuple[int, ...]|None=None, keepdim:bool=False) -> Tensor:
+    assert op in GroupOp.Reduce, f"tried to _reduceop {op}, not in GrouOp.Reduce"
     if axis is None: resolved_axis = tuple(range(self.ndim))
     elif isinstance(axis, int): resolved_axis = (axis if axis >= 0 else axis + self.ndim,)
     elif isinstance(axis, tuple): resolved_axis = tuple(x if x >= 0 else x + self.ndim for x in axis)
@@ -71,16 +72,19 @@ class Tensor(OpMixin):
       return ret.reshape(final_shape if final_shape else (1,))
     return ret
   def _mop(self, op:Ops, arg) -> Tensor:
+    assert op in GroupOp.Movement, f"tried to _mop {op}, not in GrouOp.Movement"
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), arg)
     ret.requires_grad = self.requires_grad
     return ret
   def _unop(self, op:Ops) -> Tensor:
+    assert op in GroupOp.Unary, f"tried to _unop {op}, not in GrouOp.Unary"
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
     ret.requires_grad = self.requires_grad
     return ret
   def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
+    assert op in GroupOp.Binary, f"tried to _binop {op}, not in GrouOp.Binary"
     lhs, rhs = self._broadcasted(x, reverse)
     assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.device}"
     target_dtype = most_upper_dtype(lhs.dtype, rhs.dtype)
@@ -116,6 +120,18 @@ class Tensor(OpMixin):
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)
     ret = Tensor(copy_device_uop, self.requires_grad, dtype=self.dtype)
     return ret
+
+  @property
+  def is_contiguous(self) -> bool:
+    cur = self.uop
+    while cur.op in GroupOp.Movement:
+      if cur.op is Ops.CONTIGUOUS: return True
+      if cur.op is Ops.PAD: return False
+      cur = cur.src[0]
+    return True
+  def contiguous(self) -> Tensor:
+    if self.is_contiguous: return self # NOTE: should this be a noop? or should we always generate the op
+    return self._unop(Ops.CONTIGUOUS)
 
   @property
   def T(self) -> Tensor: return self.permute(tuple(range(self.ndim - 1, -1, -1))) # reverses all axis
