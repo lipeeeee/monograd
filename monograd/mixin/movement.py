@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Self
 from math import prod
+from monograd.dtype import ConstType
 from monograd.utils import argfix
 from monograd.uop import Ops
 
@@ -51,3 +52,11 @@ class MovementMixin:
     order = list(range(self.ndim))
     order[ax1], order[ax2] = order[ax2], order[ax1]
     return self.permute(tuple(order))
+
+  def pad(self, arg:tuple[tuple[int, int], ...], value:ConstType = 0.0) -> Self:
+    if hasattr(self, 'uop'): assert not self.uop.op is Ops.PAD, "should not pad an already padded uop, this would be possible with extra compute or with copy-true pad ops" # type: ignore
+    assert len(arg) == self.ndim, f"pad arg must match ndim {self.ndim}, got {len(arg)}"
+    new_shape = tuple(s + p[0] + p[1] for s, p in zip(self.shape, arg))
+    valid_mask = tuple((p[0], s + p[0]) for s, p in zip(self.shape, arg)) # calculate the valid boundaries [start, end) for the mask_expr; e.g., ((2, 4), (1, 5))
+    ret = self._mop(Ops.PAD, (new_shape, valid_mask, value))
+    return ret

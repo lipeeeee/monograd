@@ -8,7 +8,7 @@ from monograd.uop import GroupOp, Ops
 
 # only allow unique UOps
 class UOpMetaClass(type):
-  ucache: dict[tuple, weakref.ReferenceType[UOp]] = weakref.WeakValueDictionary()
+  ucache: dict[tuple, weakref.ReferenceType[UOp]] = weakref.WeakValueDictionary() # type: ignore
   _no_cache = {Ops.LOAD}
   def __call__(self, *args, **kwds):
     op = args[0] if args else kwds.get('op')
@@ -47,6 +47,7 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.COPY: return self.src[0].shape
     if self.op is Ops.PERMUTE: return tuple(self.src[0].shape[i] for i in self.arg) # permuted shape
     if self.op is Ops.MATMUL: return self.src[0].shape[:-1] + (self.src[1].shape[-1],)
+    if self.op is Ops.PAD: return self.arg[0] 
     if self.op in GroupOp.Movement: return self.arg
     if self.op in GroupOp.Unary | GroupOp.Binary: return self.src[0].shape # NOTE: in binary: src[0] and src[1] should have the same shape?
     if self.op in GroupOp.Reduce: return self.arg[1] # reduced shape

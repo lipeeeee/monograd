@@ -4,7 +4,7 @@ from math import prod
 from enum import auto, IntEnum
 from dataclasses import dataclass
 from monograd.device import Device
-from monograd.dtype import DType
+from monograd.dtype import ConstType, DType
 from monograd.uop import GroupOp, Ops
 from monograd.uop.ops import UOp
 from monograd.utils import DEBUG, toposort
@@ -55,22 +55,24 @@ class KernelTask: # what holds scheduled graph (list)
 _bufferref_cache: weakref.WeakKeyDictionary[UOp, BufferRef] = weakref.WeakKeyDictionary()
 @dataclass  
 class BufferRef:
-  uop: UOp
+  uop: UOp # root uop, most cases is just LOAD
   shape: tuple
   strides: tuple[int, ...]
+  padding_op: UOp|None
 
   @staticmethod
   def from_uop(uop:UOp) -> BufferRef: # Main job is to compute strides for a given root input uop
     # given MUL op will return itself as a BufferRef
     # given Movement op will compute strides until leaf uop, returning leaf with correct strides
     if uop in _bufferref_cache: return _bufferref_cache[uop] 
-    movement_chain: list[UOp] = []
+    movement_chain:list[UOp] = []
     cur = uop
     while cur.op in GroupOp.Movement:
       movement_chain.append(cur)
       cur = cur.src[0]
-    shape = cur.shape
-    strides = _row_major_strides(shape)
+    shape:tuple[int, ...] = cur.shape
+    strides:tuple[int, ...] = _row_major_strides(shape)
+    padding_op:UOp|None = None
     # go through the movop chain and compute final stride
     for op in reversed(movement_chain):
       if op.op is Ops.RESHAPE:
@@ -86,7 +88,11 @@ class BufferRef:
         order = op.arg
         shape = op.shape
         strides = tuple(strides[i] for i in order)
-    ret = BufferRef(cur, shape, strides)
+      elif op.op is Ops.PAD:
+        assert padding_op is None, f"monograd only supports 1 padding OP per buffer(if u need more than 1 maybe smth is wrong)"
+        padding_op = op
+        shape = op.shape
+    ret = BufferRef(cur, shape, strides, padding_op)
     _bufferref_cache[uop] = ret
     return ret
   def index_expr(self, gid:str="gid") -> str: # generates C index expr
@@ -136,6 +142,8 @@ class BufferRef:
       elif stride == 1: terms.append(coord)
       else: terms.append(f"{coord} * {stride}")
     return " + ".join(terms) if terms else "0"
+  @property
+  def is_padded(self): return hasattr(self, "padding_op") # TODO: test because name can change
   def __repr__(self):
     return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
 
