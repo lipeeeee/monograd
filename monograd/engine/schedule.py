@@ -19,7 +19,7 @@ def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
 
 # uop utils
 def is_scalar(uop:UOp , strides=(1,)) -> bool: return uop.op is Ops.CONST or all(s == 0 for s in strides)
-def is_fusable(uop:UOp) -> bool: return uop.op in GroupOp.Unary | GroupOp.Binary # NOTE: Not checking CAST because it is in Unary
+def is_fusable(uop:UOp) -> bool: return uop.op in GroupOp.ALU # NOTE: Not checking CAST because it is in Unary
 def is_invisible(uop:UOp) -> bool: return uop.op in GroupOp.Movement
 def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | GroupOp.Reduce | {Ops.COPY, Ops.CONTIGUOUS}
 
@@ -146,6 +146,60 @@ class BufferRef:
       if stride == 1: terms.append(coord)
       else: terms.append(f"{coord} * {stride}")
     return " + ".join(terms) if terms else "0"
+  def load_expr(self, buf_name:str, gid:str="gid") -> str:
+    idx_str:str = self.index_expr(gid)
+    if not self.is_padded: return f"{buf_name}[{idx_str}]"
+    from monograd.engine.codegen import cl_const
+    mask_str:str = self.mask_expr(gid)
+    val:ConstType = self.padding_op.arg[2] # type: ignore
+    pad_val_str:str = cl_const(val, self.uop.dtype)
+    return f"({mask_str} ? {buf_name}[{idx_str}] : {pad_val_str})"
+  def reduce_load_expr(self, reduce_axis:int, buf_name:str, gid:str="gid") -> str:
+    idx_str = self.reduce_index_expr(reduce_axis, gid)
+    if not self.is_padded: return f"{buf_name}[{idx_str}]"
+    from monograd.engine.codegen import cl_const
+    mask_str:str = self.reduce_mask_expr(reduce_axis, gid)
+    val:ConstType = self.padding_op.arg[2] # type: ignore
+    pad_val_str:str = cl_const(val, self.uop.dtype)
+    return f"({mask_str} ? {buf_name}[{idx_str}] : {pad_val_str})"
+  def mask_expr(self, gid:str="gid") -> str:
+    if not self.is_padded: return "1"
+    coords: list[str] = []
+    remaining = gid
+    for i in range(len(self.shape)):
+      below = prod(self.shape[i+1:])
+      if below == 1: coords.append(remaining)
+      else:
+        coords.append(f"({remaining} / {below})")
+        remaining = f"({remaining} % {below})"
+    conditions: list[str] = []
+    valid_mask:tuple[tuple[int, ...]] = self.padding_op.arg[1] # type: ignore
+    for i, (coord, (start, end)) in enumerate(zip(coords, valid_mask)):
+      if start > 0 or end < self.shape[i]:
+        conditions.append(f"({coord} >= {start} && {coord} < {end})")
+    return " && ".join(conditions) if conditions else "1"
+  def reduce_mask_expr(self, reduce_axis:int, gid:str="gid") -> str:
+    if not self.is_padded: return "1"
+    output_shape = list(self.shape)
+    output_shape.pop(reduce_axis)
+    gid_coords:list[str] = []
+    remaining = gid
+    for i in range(len(output_shape)):
+      below = prod(output_shape[i+1:])
+      if below == 1: gid_coords.append(remaining)
+      else:
+        gid_coords.append(f"({remaining} / {below})")
+        remaining = f"({remaining} % {below})"
+    # Insert loop variable 'k'
+    input_coords = list(gid_coords)
+    input_coords.insert(reduce_axis, "k")
+    # Check boundaries against valid_mask
+    conditions:list[str] = []
+    valid_mask:tuple[tuple[int, ...]] = self.padding_op.arg[1] # type: ignore
+    for i, (coord, (start, end)) in enumerate(zip(input_coords, valid_mask)):
+      if start > 0 or end < self.shape[i]:
+        conditions.append(f"({coord} >= {start} && {coord} < {end})")
+    return " && ".join(conditions) if conditions else "1"
   @property
   def is_padded(self): return self.padding_op is not None
   def __repr__(self):

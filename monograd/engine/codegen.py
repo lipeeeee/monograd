@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Callable
 from math import prod
 from monograd.engine.schedule import BufferRef, KernelTask, TaskKind
-from monograd.dtype import DType, ConstType, dtypes
+from monograd.dtype import DType, ConstType, DTypeLike, dtypes, to_dtype
 from monograd.uop.ops import UOp, identity_element
 from monograd.uop import GroupOp, Ops
 from monograd.utils import DEBUG
@@ -52,17 +52,14 @@ CL_OP: dict[Ops, Callable] = {
 
 
 # *** rendering helpers ****
-def cl_type(dtype:DType) -> str: return dtype.name
-def cl_vfix(v:ConstType): # value fix for python types in opencl kernels
-  # TODO: handle adding suffixes to dtypes? (f, h, etc.)
-  if v == -float('inf'): return "-INFINITY"
-  if v == float('inf'): return "INFINITY"
-  return v
-def cl_const(val:ConstType, dtype:DType) -> str:
+def cl_type(dtype:DType) -> str: return dtype.name # NOTE: Cache??
+def cl_const(val:ConstType, dtype:DType) -> str: # NOTE: Cache??
+  if val == -float('inf'): return "-INFINITY"
+  if val == float('inf'): return "INFINITY"
   if dtype is dtypes.bool: return "1" if val else "0"
   if dtypes.is_float(dtype): # handle weirdness of c99 llvm when casting floats
     if dtype is dtypes.half: return f"{float(val)}h"
-    if dtype is dtypes.float: return f"({cl_type(dtype)}{float(val)}f" # opencl does (half)1.0f
+    if dtype is dtypes.float: return f"{float(val)}f" # opencl does (half)1.0f
     if dtype is dtypes.double: return f"{float(val)}"
   assert not dtypes.is_float(dtype), f"unhandled float dtype: {dtype}"
   return f"({cl_type(dtype)})({int(val)})"
@@ -76,7 +73,8 @@ def kernel_name(task:KernelTask) -> str:
   kind = task.kind.name.lower()
   ops = "_".join(u.op.name.lower() for u in task.ops)
   shape = "x".join(str(s) for s in task.output_shape)
-  return f"{kind}_{ops}_{shape}"
+  dtype = task.output_dtype.name.lower() + str(task.output_dtype.bitsize)
+  return f"{dtype}_{kind}_{ops}_{shape}"
 def _resolve_base(uop:UOp) -> UOp:
   cur = uop
   while cur.op in GroupOp.Movement: cur = cur.src[0]
@@ -117,7 +115,7 @@ def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
   args:list[str] = []
   for i, buff in enumerate(task.inputs): # NOTE: do not generate variable lines for each input and hope compiler catches them and makes them 1 memory read only
     args.append(f"__global const {cl_type(buff.uop.dtype)}* in{i}")
-    val_map[id(buff.uop)] = f"in{i}[{buff.index_expr('gid')}]"
+    val_map[id(buff.uop)] = buff.load_expr(f"in{i}", "gid") # f"in{i}[{buff.index_expr('gid')}]"
   args.extend([f"__global {cl_type(task.output_dtype)}* out", "const int n"])
   body:str = "\n".join(render_op_chain(task.ops, val_map))
   source:str = f"""{render_pragmas(task)}
@@ -146,7 +144,7 @@ __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, __local 
   int gid = get_global_id(0);
   int g_stride = get_global_size(0);
   int l_size = get_local_size(0);
-  {dtype} acc = {cl_vfix(identity_element(uop.op, task.output_dtype))};
+  {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
   for (int i = gid; i < n; i += g_stride) {{
     acc = {render_op(uop, ['acc', 'in[i]'])};
   }}
@@ -176,10 +174,10 @@ def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
 __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
   int gid = get_global_id(0);
   if (gid >= n) return;
-  {dtype} acc = {cl_vfix(identity_element(uop.op, task.output_dtype))};
+  {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
   for (int k = 0; k < {input_buf.shape[axis]}; k++) {{ // k < reduce_size
-    int input_idx = {input_buf.reduce_index_expr(axis)}; 
-    acc = {render_op(uop, ['acc', 'in[input_idx]'])};
+    {dtype} val = {input_buf.reduce_load_expr(axis, 'in', 'gid')};
+    acc = {render_op(uop, ['acc', 'val'])};
   }}
   out[gid] = acc;
 }}"""
@@ -194,7 +192,7 @@ def _codegen_copy(task:KernelTask) -> CompiledKernel:
 __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
   int gid = get_global_id(0);
   if (gid >= n) return;
-  out[gid] = in[gid];
+  out[gid] = {task.inputs[0].load_expr('in', 'gid')};
 }}"""
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 

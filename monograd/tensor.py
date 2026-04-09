@@ -55,7 +55,7 @@ class Tensor(OpMixin):
 
   def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
   def _reduceop(self, op:Ops, axis:int|tuple[int, ...]|None=None, keepdim:bool=False) -> Tensor:
-    if DEBUG >= 3 and not op in GroupOp.Movement: print(f"WARN: _reduceop({op}), not in GroupOp.Reduce")
+    if DEBUG >= 3 and not op in GroupOp.Reduce: print(f"WARN: _reduceop({op}), not in GroupOp.Reduce")
     assert op in GroupOp.Reduce, f"tried to _reduceop {op}, not in GrouOp.Reduce"
     if axis is None: resolved_axis = tuple(range(self.ndim))
     elif isinstance(axis, int): resolved_axis = (axis if axis >= 0 else axis + self.ndim,)
@@ -171,23 +171,24 @@ def pprint_graph(uop:Tensor|UOp, prefix:str="", is_last:bool=True, visited:set|N
 if __name__ == "__main__":
   from monograd.tensor import Tensor
   from monograd.engine.schedule import run_scheduler, pprint_schedule
+  from monograd.engine.optimize import rewrite_graph
   from monograd.engine.codegen import codegen
 
-  a = Tensor([[1.0, 2.0], [3.0, 4.0]], device="gpu", dtype="float64") # Shape: (2, 2)
-  b = Tensor([10.0, 20.0, 30.0, 40.0], device="gpu", dtype="float64") # Shape: (4,)
-
+  a = Tensor([[1.0, 2.0], [3.0, 4.0]], device="gpu", dtype=dtypes.half)
+  b = Tensor([[10.0, 20.0], [30.0, 40.0]], device="gpu", dtype="float64")
   a_pad = a.pad(((1, 1), (1, 1)), value=-1.0)
-  a_T = a_pad.permute((1, 0))
-  b_broadcast = b.reshape((4, 1)).expand((4, 4))
-  c = a_T + b_broadcast
-  d = c.sum(axis=0) 
-  e = (d * 2.0) - 5.0 
-  d = e.max()
+  b_pad = b.pad(((1, 1), (1, 1)), value=0.0)
+  c = (a_pad * 5.0) + 2.0
+  d = b_pad.sum(axis=0) 
+  e = c.sum(axis=0) + d
+  d = e.max().uop
+  d = rewrite_graph(d)
+
 
   print("=== UOP GRAPH ===")
   pprint_graph(d)
   print("\n=== SCHEDULED KERNELS ===")
-  s = run_scheduler(d.uop)
+  s = run_scheduler(d)
   pprint_schedule(s)
   print("\n=== GENERATED C CODE ===")
   [codegen(si) for si in s]

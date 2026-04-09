@@ -40,31 +40,6 @@ class UPat:
       captures.update(result)
     return captures
 
-# **** rewrite engine ****
-Rule = tuple[UPat, Callable[..., UOp | None]]
-def rewrite_graph(root:UOp, rules:list[Rule]) -> UOp:
-  while True:
-    new_root = _rewrite_pass(root, rules)
-    if new_root is root: break
-    root = new_root
-  return root
-def _rewrite_pass(root:UOp, rules:list[Rule]) -> UOp:
-  memo:dict[int, UOp] = {}
-  def rewrite(u: UOp) -> UOp:
-    if id(u) in memo: return memo[id(u)]
-    new_src = tuple(rewrite(s) for s in u.src)
-    node = UOp(u.op, u.dtype, new_src, u.arg) if new_src != u.src else u
-    for pat, action in rules:
-      captures = pat.match(node)
-      if captures is not None:
-        result = action(**captures)
-        if result is not None:
-          memo[id(u)] = result
-          return result
-    memo[id(u)] = node
-    return node
-  return rewrite(root)
-
 
 # **** patterns/rules ****
 # ADD(MUL(x,y),z) -> MULACC
@@ -171,3 +146,30 @@ DEFAULT_RULES: list[Rule] = [
   STRENGTH_REDUCE_POW2,   # x**2 -> x*x
   FUSE_MULACC,            # ADD(MUL(a,b),c) -> MULACC
 ]
+
+# **** rewrite engine ****
+Rule = tuple[UPat, Callable[..., UOp | None]]
+def rewrite_graph(root:UOp, rules:list[Rule]=DEFAULT_RULES) -> UOp:
+  while True:
+    new_root = _rewrite_pass(root, rules)
+    if new_root is root: break
+    root = new_root
+  return root
+def _rewrite_pass(root:UOp, rules:list[Rule]) -> UOp:
+  memo:dict[int, UOp] = {}
+  def rewrite(u: UOp) -> UOp:
+    if id(u) in memo: return memo[id(u)]
+    new_src = tuple(rewrite(s) for s in u.src)
+    node = UOp(u.op, u.dtype, new_src, u.arg) if new_src != u.src else u
+    for pat, action in rules:
+      captures = pat.match(node)
+      if captures is not None:
+        result = action(**captures)
+        if result is not None:
+          memo[id(u)] = result
+          return result
+    memo[id(u)] = node
+    return node
+  return rewrite(root)
+
+
