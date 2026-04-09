@@ -108,7 +108,7 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # elem
 def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
   if task.kind is TaskKind.REDUCE: return _codegen_reduce(task)
-  if task.kind is TaskKind.COPY: return None # type: ignore
+  if task.kind is TaskKind.COPY: return _codegen_copy(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
   name:str = kernel_name(task)
@@ -182,6 +182,19 @@ __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const in
     acc = {render_op(uop, ['acc', 'in[input_idx]'])};
   }}
   out[gid] = acc;
+}}"""
+  if DEBUG >= 1: print(source)
+  return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
+                        output_shape=task.output_shape, output_dtype=task.output_dtype)
+def _codegen_copy(task:KernelTask) -> CompiledKernel:
+  n:int = prod(task.output_shape)
+  name:str = kernel_name(task)
+  dtype:str = cl_type(task.output_dtype)
+  source:str = f"""{render_pragmas(task)}
+__kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
+  int gid = get_global_id(0);
+  if (gid >= n) return;
+  out[gid] = in[gid];
 }}"""
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
