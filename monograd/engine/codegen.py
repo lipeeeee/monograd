@@ -105,7 +105,8 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # elem
   return lines
 def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
-  if task.kind is TaskKind.REDUCE: return _codegen_reduce(task)
+  if task.kind is TaskKind.REDUCE_FULL: return _codegen_reduce_full(task, _local_size_tmp)
+  if task.kind is TaskKind.REDUCE_STRIDED: return _codegen_reduce_strided(task)
   if task.kind is TaskKind.COPY: return _codegen_copy(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
@@ -128,11 +129,6 @@ __kernel void {name}({', '.join(args)}) {{
   if DEBUG >= 1: print(source)
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
-def _codegen_reduce(task:KernelTask) -> CompiledKernel:
-  axes:tuple[int, ...]  = task.ops[0].arg[0]
-  input_uop:UOp         = task.ops[0].src[0]
-  if len(axes) == len(input_uop.shape): return _codegen_reduce_full(task, local_size=_local_size_tmp)
-  else: return _codegen_reduce_strided(task)
 def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
   n:int = prod(task.output_shape)
   uop:UOp = task.output_uop

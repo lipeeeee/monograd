@@ -587,7 +587,7 @@ class TestSchedulerTaskCount(unittest.TestCase):
     a     = load((4,))
     tasks = run_scheduler(sumop(a, (0,), (1,)))
     self.assertEqual(len(tasks), 1)
-    self.assertEqual(tasks[0].kind, TaskKind.REDUCE)
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_FULL)
 
   def test_elementwise_then_reduce(self):
     a     = load((4,))
@@ -595,7 +595,7 @@ class TestSchedulerTaskCount(unittest.TestCase):
     tasks = run_scheduler(out)
     self.assertEqual(len(tasks), 2)
     self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
-    self.assertEqual(tasks[1].kind, TaskKind.REDUCE)
+    self.assertEqual(tasks[1].kind, TaskKind.REDUCE_FULL)
 
   def test_reduce_then_elementwise(self):
     a   = load((4,))
@@ -603,7 +603,7 @@ class TestSchedulerTaskCount(unittest.TestCase):
     out = relu(s)
     tasks = run_scheduler(out)
     self.assertEqual(len(tasks), 2)
-    self.assertEqual(tasks[0].kind, TaskKind.REDUCE)
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_FULL)
     self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE)
 
   def test_elementwise_reduce_elementwise(self):
@@ -614,7 +614,7 @@ class TestSchedulerTaskCount(unittest.TestCase):
     kinds = [t.kind for t in tasks]
     self.assertEqual(kinds, [
       TaskKind.ELEMENTWISE,
-      TaskKind.REDUCE,
+      TaskKind.REDUCE_FULL,
       TaskKind.ELEMENTWISE,
     ])
 
@@ -624,7 +624,7 @@ class TestSchedulerTaskCount(unittest.TestCase):
     s2  = sumop(s1, (0,), (1,))
     tasks = run_scheduler(s2)
     self.assertEqual(len(tasks), 2)
-    self.assertTrue(all(t.kind == TaskKind.REDUCE for t in tasks))
+    self.assertTrue(all(t.kind == TaskKind.REDUCE_FULL for t in tasks))
 
   def test_matmul_own_task(self):
     x, w  = load((4, 8)), load((8, 16))
@@ -829,9 +829,9 @@ class TestRealWorldPatterns(unittest.TestCase):
     div decomposes to MUL(exp, RECIP(sum)) — still elementwise, still fuses.
 
     Expected tasks (unchanged from pre-decomposition):
-      0: REDUCE  — reducemax(x, axis=-1)
+      0: REDUCE_FULL  — reducemax(x, axis=-1)
       1: ELEMENTWISE — (x - max) then exp  (MUL+ADD+EXP fused)
-      2: REDUCE  — sum(exp, axis=-1)
+      2: REDUCE_FULL  — sum(exp, axis=-1)
       3: ELEMENTWISE — div result  (RECIP+MUL fused)
     """
     x      = load((2, 4))
@@ -844,9 +844,9 @@ class TestRealWorldPatterns(unittest.TestCase):
     out    = div(x_exp, br_sum)  # = mul(x_exp, recip(br_sum))
     tasks  = run_scheduler(out)
     self.assertEqual(len(tasks), 4)
-    self.assertEqual(tasks[0].kind, TaskKind.REDUCE)      # max
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_STRIDED)      # max
     self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE) # neg+add(sub)+exp fused
-    self.assertEqual(tasks[2].kind, TaskKind.REDUCE)      # sum
+    self.assertEqual(tasks[2].kind, TaskKind.REDUCE_STRIDED)      # sum
     self.assertEqual(tasks[3].kind, TaskKind.ELEMENTWISE) # recip+mul(div) fused
 
   def test_softmax_sub_and_exp_fuse(self):
@@ -894,7 +894,7 @@ class TestRealWorldPatterns(unittest.TestCase):
     loss = mean((pred - target)^2) = sum((pred-target)^2) / N
     sub and div are decomposed but task count is unchanged.
 
-    Expected: ELEMENTWISE → REDUCE → ELEMENTWISE (3 tasks)
+    Expected: ELEMENTWISE → REDUCE_FULL → ELEMENTWISE (3 tasks)
     """
     pred   = load((4,))
     target = load((4,))
@@ -906,7 +906,7 @@ class TestRealWorldPatterns(unittest.TestCase):
     tasks  = run_scheduler(out)
     self.assertEqual(len(tasks), 3)
     self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
-    self.assertEqual(tasks[1].kind, TaskKind.REDUCE)
+    self.assertEqual(tasks[1].kind, TaskKind.REDUCE_FULL)
     self.assertEqual(tasks[2].kind, TaskKind.ELEMENTWISE)
 
   def test_mse_sub_and_square_fuse(self):
@@ -964,9 +964,9 @@ class TestRealWorldPatterns(unittest.TestCase):
     eps  = const(1e-5)
     out  = div(diff, sqrt(add(var, eps)))
     tasks = run_scheduler(out)
-    reduce_count = sum(1 for t in tasks if t.kind == TaskKind.REDUCE)
+    reduce_count = sum(1 for t in tasks if t.kind == TaskKind.REDUCE_STRIDED)
     self.assertGreaterEqual(reduce_count, 2)
-    reduce_indices = [i for i, t in enumerate(tasks) if t.kind == TaskKind.REDUCE]
+    reduce_indices = [i for i, t in enumerate(tasks) if t.kind == TaskKind.REDUCE_STRIDED]
     self.assertLess(reduce_indices[0], reduce_indices[1])
 
 
@@ -993,7 +993,7 @@ class TestSchedulerEdgeCases(unittest.TestCase):
     s1 = sumop(a, (0,), (1,))
     tasks = run_scheduler(s1)
     self.assertEqual(len(tasks), 1)
-    self.assertEqual(tasks[0].kind, TaskKind.REDUCE)
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_FULL)
 
   def test_long_chain_stays_one_task(self):
     """10 chained unary ops must fuse into a single kernel"""

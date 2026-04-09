@@ -24,7 +24,7 @@ def is_invisible(uop:UOp) -> bool: return uop.op in GroupOp.Movement
 def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | GroupOp.Reduce | {Ops.COPY, Ops.CONTIGUOUS}
 
 class TaskKind(IntEnum):
-  ELEMENTWISE = auto(); REDUCE = auto(); BLAS = auto(); COPY = auto()
+  ELEMENTWISE = auto(); REDUCE_FULL = auto(); REDUCE_STRIDED = auto(); BLAS = auto(); COPY = auto()
 
 @dataclass
 class KernelTask: # what holds scheduled graph (list)
@@ -164,7 +164,7 @@ class BufferRef:
     return f"({mask_str} ? {buf_name}[{idx_str}] : {pad_val_str})"
   def mask_expr(self, gid:str="gid") -> str:
     if not self.is_padded: return "1"
-    coords: list[str] = []
+    coords:list[str] = []
     remaining = gid
     for i in range(len(self.shape)):
       below = prod(self.shape[i+1:])
@@ -172,7 +172,7 @@ class BufferRef:
       else:
         coords.append(f"({remaining} / {below})")
         remaining = f"({remaining} % {below})"
-    conditions: list[str] = []
+    conditions:list[str] = []
     valid_mask:tuple[tuple[int, ...]] = self.padding_op.arg[1] # type: ignore
     for i, (coord, (start, end)) in enumerate(zip(coords, valid_mask)):
       if start > 0 or end < self.shape[i]:
@@ -201,7 +201,7 @@ class BufferRef:
         conditions.append(f"({coord} >= {start} && {coord} < {end})")
     return " && ".join(conditions) if conditions else "1"
   @property
-  def is_padded(self): return self.padding_op is not None
+  def is_padded(self): return not self.padding_op is None
   def __repr__(self):
     return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
 
@@ -217,7 +217,9 @@ def run_scheduler(root:UOp) -> list[KernelTask]:
       _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)
       kind:TaskKind|None = None
       if node.op in GroupOp.BLAS: kind = TaskKind.BLAS
-      elif node.op in GroupOp.Reduce: kind = TaskKind.REDUCE
+      elif node.op in GroupOp.Reduce:
+        if len(node.shape) == len(node.arg[0]): kind = TaskKind.REDUCE_FULL
+        else: kind = TaskKind.REDUCE_STRIDED
       elif node.op in {Ops.COPY, Ops.CONTIGUOUS}: kind = TaskKind.COPY
       assert kind is not None, "could not determine boundary node kind {node}"
       scheduled_kernels.append(KernelTask(kind, [node], _collect_inputs([node]))) # manual flush
