@@ -14,6 +14,11 @@ def _align_left(*shapes:tuple[int, ...]) -> tuple[tuple[int, ...], ...]:
 class MovementMixin:
   def _mop(self, op:Ops, arg) -> Self:
     raise NotImplementedError
+  def contiguous(self) -> Self:
+    raise NotImplementedError
+  @property
+  def is_contiguous(self) -> bool:
+    raise NotImplementedError
   @property
   def shape(self) -> tuple[int, ...]:
     raise NotImplementedError
@@ -32,9 +37,11 @@ class MovementMixin:
     return reshaped if ret.shape == reshaped.shape else ret
 
   def expand(self, shape, *args) -> Self:
+    if not self.is_contiguous: return self.contiguous().expand(shape, *args)
     new_shape = tuple(from_ if to == -1 or to is None else to for from_, to in zip(*(_align_left(self.shape, argfix(shape, *args)))))
     return self._broadcast_to(new_shape)
   def reshape(self, shape, *args) -> Self:
+    if not self.is_contiguous: return self.contiguous().reshape(shape, *args)
     if self.shape == (): return self # noop for consts
     new_shape = tuple([s if s is not None else self.shape[i] for i, s in enumerate(argfix(shape, *args))])
     # resolve -1
@@ -45,10 +52,12 @@ class MovementMixin:
     ret = self._mop(Ops.RESHAPE, new_shape)
     return self if ret.shape == self.shape else ret
   def permute(self, order:tuple[int, ...]) -> Self:
+    if not self.is_contiguous: return self.contiguous().permute(order)
     assert len(order) == self.ndim, f"permute order must match ndim {len(order)}vs{self.ndim}"
     assert sorted(order) == list(range(self.ndim)), "permute order must be a valid axis permutation"
     return self._mop(Ops.PERMUTE, order)
   def transpose(self, ax1:int=1, ax2:int=0) -> Self:
+    if not self.is_contiguous: return self.contiguous().transpose(ax1, ax2)
     order = list(range(self.ndim))
     order[ax1], order[ax2] = order[ax2], order[ax1]
     return self.permute(tuple(order))

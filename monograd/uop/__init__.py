@@ -33,7 +33,7 @@ class Ops(IntEnum):
   def __repr__(self): return str(self)
 
 class GroupOp:
-  Unary = {Ops.SIN, Ops.SQRT, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP, Ops.RECIP, Ops.CONTIGUOUS}
+  Unary = {Ops.SIN, Ops.SQRT, Ops.LOG, Ops.RELU, Ops.CAST, Ops.EXP, Ops.RECIP}
   Binary = {Ops.ADD, Ops.MUL, Ops.MOD, Ops.MAX, Ops.XOR, Ops.OR, Ops.AND, Ops.POW}
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)

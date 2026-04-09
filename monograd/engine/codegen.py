@@ -108,6 +108,7 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # elem
 def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
   if task.kind is TaskKind.REDUCE: return _codegen_reduce(task)
+  if task.kind is TaskKind.COPY: return None # type: ignore
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
   name:str = kernel_name(task)

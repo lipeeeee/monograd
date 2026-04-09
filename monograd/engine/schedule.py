@@ -112,9 +112,11 @@ class BufferRef:
     # build flat index from strides
     # skip dims where stride is 0 (broadcast — contributes nothing)
     terms:list[str] = []
-    for coord, stride in zip(coords, self.strides):
+    for i, (coord, stride) in enumerate(zip(coords, self.strides)):
       if stride == 0: continue # broadcast dim, skip
-      elif stride == 1: terms.append(coord)
+      if self.is_padded:
+        if (valid_mask := self.padding_op.arg[1][i][0]) > 0: coord = f"({coord} - {valid_mask})" # type: ignore
+      if stride == 1: terms.append(coord)
       else: terms.append(f"{coord} * {stride}")
     if not terms: return "0"
     return " + ".join(terms)
@@ -137,13 +139,15 @@ class BufferRef:
     input_coords.insert(reduce_axis, "k")
     # multiply by the INPUT strides to get the flat physical address
     terms: list[str] = []
-    for coord, stride in zip(input_coords, self.strides):
+    for i, (coord, stride) in enumerate(zip(input_coords, self.strides)):
       if stride == 0: continue
-      elif stride == 1: terms.append(coord)
+      if self.is_padded:
+        if (valid_mask := self.padding_op.arg[1][i][0]) > 0: coord = f"({coord} - {valid_mask})" # type: ignore
+      if stride == 1: terms.append(coord)
       else: terms.append(f"{coord} * {stride}")
     return " + ".join(terms) if terms else "0"
   @property
-  def is_padded(self): return hasattr(self, "padding_op") # TODO: test because name can change
+  def is_padded(self): return self.padding_op is not None
   def __repr__(self):
     return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
 

@@ -37,6 +37,7 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.COPY: return self.arg
     if self.op in GroupOp.Movement: return self.src[0].device
     # if self.op is Ops.MATMUL: return self.arg
+    if self.op is Ops.CONTIGUOUS: return self.src[0].device # uses _unop
     if self.op in GroupOp.Binary | GroupOp.Unary: return self.arg
     if self.op in GroupOp.Reduce: return self.src[0].device
     raise NotImplementedError(f"unkown op {self.op} > {self} {self.src}")
@@ -48,6 +49,7 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.PERMUTE: return tuple(self.src[0].shape[i] for i in self.arg) # permuted shape
     if self.op is Ops.MATMUL: return self.src[0].shape[:-1] + (self.src[1].shape[-1],)
     if self.op is Ops.PAD: return self.arg[0] 
+    if self.op is Ops.CONTIGUOUS: return self.src[0].shape # uses _unop
     if self.op in GroupOp.Movement: return self.arg
     if self.op in GroupOp.Unary | GroupOp.Binary: return self.src[0].shape # NOTE: in binary: src[0] and src[1] should have the same shape?
     if self.op in GroupOp.Reduce: return self.arg[1] # reduced shape

@@ -55,6 +55,7 @@ class Tensor(OpMixin):
 
   def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
   def _reduceop(self, op:Ops, axis:int|tuple[int, ...]|None=None, keepdim:bool=False) -> Tensor:
+    if DEBUG >= 3 and not op in GroupOp.Movement: print(f"WARN: _reduceop({op}), not in GroupOp.Reduce")
     assert op in GroupOp.Reduce, f"tried to _reduceop {op}, not in GrouOp.Reduce"
     if axis is None: resolved_axis = tuple(range(self.ndim))
     elif isinstance(axis, int): resolved_axis = (axis if axis >= 0 else axis + self.ndim,)
@@ -72,19 +73,19 @@ class Tensor(OpMixin):
       return ret.reshape(final_shape if final_shape else (1,))
     return ret
   def _mop(self, op:Ops, arg) -> Tensor:
-    assert op in GroupOp.Movement, f"tried to _mop {op}, not in GrouOp.Movement"
+    if DEBUG >= 3 and not op in GroupOp.Movement: print(f"WARN: _mop({op}), not in GroupOp.Movement")
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), arg)
     ret.requires_grad = self.requires_grad
     return ret
   def _unop(self, op:Ops) -> Tensor:
-    assert op in GroupOp.Unary, f"tried to _unop {op}, not in GrouOp.Unary"
+    if DEBUG >= 3 and not op in GroupOp.Unary: print(f"WARN: _unop({op}), not in GroupOp.Unary")
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), self.device)
     ret.requires_grad = self.requires_grad
     return ret
   def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
-    assert op in GroupOp.Binary, f"tried to _binop {op}, not in GrouOp.Binary"
+    if DEBUG >= 3 and not op in GroupOp.Binary: print(f"WARN: _binop({op}), not in GroupOp.Binary")
     lhs, rhs = self._broadcasted(x, reverse)
     assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.device}"
     target_dtype = most_upper_dtype(lhs.dtype, rhs.dtype)
@@ -124,7 +125,7 @@ class Tensor(OpMixin):
   @property
   def is_contiguous(self) -> bool:
     cur = self.uop
-    while cur.op in GroupOp.Movement:
+    while cur.op in GroupOp.Movement or cur.op in {Ops.PAD, Ops.CONTIGUOUS}:
       if cur.op is Ops.CONTIGUOUS: return True
       if cur.op is Ops.PAD: return False
       cur = cur.src[0]
@@ -168,15 +169,25 @@ def pprint_graph(uop:Tensor|UOp, prefix:str="", is_last:bool=True, visited:set|N
       pprint_graph(src_uop, next_prefix, is_last_src, visited)
 
 if __name__ == "__main__":
-  a = Tensor([[1, 2, 3], [4, 5, 6]], device="gpu", dtype="float64")
-  b = Tensor([3, 2, 1], device="gpu")
-  c = ((a * 2) + b) * 5
-  d = c.max()
-  pprint_graph(d)
-
+  from monograd.tensor import Tensor
   from monograd.engine.schedule import run_scheduler, pprint_schedule
+  from monograd.engine.codegen import codegen
+
+  a = Tensor([[1.0, 2.0], [3.0, 4.0]], device="gpu", dtype="float64") # Shape: (2, 2)
+  b = Tensor([10.0, 20.0, 30.0, 40.0], device="gpu", dtype="float64") # Shape: (4,)
+
+  a_pad = a.pad(((1, 1), (1, 1)), value=-1.0)
+  a_T = a_pad.permute((1, 0))
+  b_broadcast = b.reshape((4, 1)).expand((4, 4))
+  c = a_T + b_broadcast
+  d = c.sum(axis=0) 
+  e = (d * 2.0) - 5.0 
+  d = e.max()
+
+  print("=== UOP GRAPH ===")
+  pprint_graph(d)
+  print("\n=== SCHEDULED KERNELS ===")
   s = run_scheduler(d.uop)
   pprint_schedule(s)
-  
-  from monograd.engine.codegen import codegen
+  print("\n=== GENERATED C CODE ===")
   [codegen(si) for si in s]
