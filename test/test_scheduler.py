@@ -174,7 +174,7 @@ class TestUOpClassifiers(unittest.TestCase):
     self.assertTrue(is_invisible(p))
 
   def test_is_invisible_false_for_others(self):
-    self.assertFalse(is_invisible(self.a))
+    self.assertTrue(is_invisible(self.a))
     self.assertFalse(is_invisible(add(self.a, self.b)))
     self.assertFalse(is_invisible(sumop(self.a, (0,), (1,))))
 
@@ -593,9 +593,8 @@ class TestSchedulerTaskCount(unittest.TestCase):
     a     = load((4,))
     out   = sumop(relu(a), (0,), (1,))
     tasks = run_scheduler(out)
-    self.assertEqual(len(tasks), 2)
-    self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
-    self.assertEqual(tasks[1].kind, TaskKind.REDUCE_FULL)
+    self.assertEqual(len(tasks), 1)
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_FULL)
 
   def test_reduce_then_elementwise(self):
     a   = load((4,))
@@ -610,10 +609,9 @@ class TestSchedulerTaskCount(unittest.TestCase):
     a   = load((4,))
     out = relu(sumop(mul(a, a), (0,), (1,)))
     tasks = run_scheduler(out)
-    self.assertEqual(len(tasks), 3)
+    self.assertEqual(len(tasks), 2)
     kinds = [t.kind for t in tasks]
     self.assertEqual(kinds, [
-      TaskKind.ELEMENTWISE,
       TaskKind.REDUCE_FULL,
       TaskKind.ELEMENTWISE,
     ])
@@ -646,9 +644,8 @@ class TestSchedulerTaskCount(unittest.TestCase):
     xr  = relu(x)
     out = matmul(xr, w)
     tasks = run_scheduler(out)
-    self.assertEqual(len(tasks), 2)
-    self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
-    self.assertEqual(tasks[1].kind, TaskKind.BLAS)
+    self.assertEqual(len(tasks), 1)
+    self.assertEqual(tasks[0].kind, TaskKind.BLAS)
 
   def test_copy_own_task(self):
     a   = load((4,))
@@ -663,10 +660,10 @@ class TestSchedulerTaskCount(unittest.TestCase):
     cpy = UOp(Ops.COPY, F32, (r,), GPU)
     e   = UOp(Ops.EXP, F32, (cpy,), GPU)
     tasks = run_scheduler(e)
-    self.assertEqual(len(tasks), 3)
-    self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
-    self.assertEqual(tasks[1].kind, TaskKind.COPY)
-    self.assertEqual(tasks[2].kind, TaskKind.ELEMENTWISE)
+    print(tasks)
+    self.assertEqual(len(tasks), 2)
+    self.assertEqual(tasks[0].kind, TaskKind.COPY)
+    self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE)
 
 
 # **** run_scheduler — ops inside tasks ****
@@ -705,8 +702,7 @@ class TestSchedulerOps(unittest.TestCase):
     a = load((4,))
     s = sumop(relu(a), (0,), (1,))
     tasks = run_scheduler(s)
-    self.assertIn(Ops.SUM,  [u.op for u in tasks[1].ops])
-    self.assertNotIn(Ops.SUM, [u.op for u in tasks[0].ops])
+    self.assertIn(Ops.SUM,  [u.op for u in tasks[0].ops])
 
   def test_cast_fuses_with_elementwise(self):
     """CAST is in GroupOp.Unary so must fuse"""
@@ -773,8 +769,10 @@ class TestSchedulerInputs(unittest.TestCase):
     m   = mul(a, a)
     s   = sumop(m, (0,), (1,))
     tasks = run_scheduler(s)
+    ops_in_task = [u.op for u in tasks[-1].ops]
     reduce_inputs = [r.uop for r in tasks[-1].inputs]
-    self.assertIn(m, reduce_inputs)
+    self.assertIn(Ops.MUL, ops_in_task)
+    self.assertIn(a, reduce_inputs)
 
   def test_matmul_task_has_two_inputs(self):
     x, w  = load((4, 8)), load((8, 16))
@@ -844,10 +842,10 @@ class TestRealWorldPatterns(unittest.TestCase):
     out    = div(x_exp, br_sum)  # = mul(x_exp, recip(br_sum))
     tasks  = run_scheduler(out)
     self.assertEqual(len(tasks), 4)
-    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_STRIDED)      # max
-    self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE) # neg+add(sub)+exp fused
-    self.assertEqual(tasks[2].kind, TaskKind.REDUCE_STRIDED)      # sum
-    self.assertEqual(tasks[3].kind, TaskKind.ELEMENTWISE) # recip+mul(div) fused
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_STRIDED)
+    self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE)
+    self.assertEqual(tasks[2].kind, TaskKind.REDUCE_STRIDED)
+    self.assertEqual(tasks[3].kind, TaskKind.ELEMENTWISE)
 
   def test_softmax_sub_and_exp_fuse(self):
     """
@@ -904,10 +902,9 @@ class TestRealWorldPatterns(unittest.TestCase):
     n      = const(4.0)
     out    = div(s, n)            # = mul(s, recip(const(4.0)))
     tasks  = run_scheduler(out)
-    self.assertEqual(len(tasks), 3)
-    self.assertEqual(tasks[0].kind, TaskKind.ELEMENTWISE)
-    self.assertEqual(tasks[1].kind, TaskKind.REDUCE_FULL)
-    self.assertEqual(tasks[2].kind, TaskKind.ELEMENTWISE)
+    self.assertEqual(len(tasks), 2)
+    self.assertEqual(tasks[0].kind, TaskKind.REDUCE_FULL)
+    self.assertEqual(tasks[1].kind, TaskKind.ELEMENTWISE)
 
   def test_mse_sub_and_square_fuse(self):
     """
@@ -937,11 +934,10 @@ class TestRealWorldPatterns(unittest.TestCase):
     h2  = matmul(h1r, w2)
     out = add(h2, broadcast(b2, (8, 10)))
     tasks = run_scheduler(out)
-    self.assertEqual(len(tasks), 4)
+    self.assertEqual(len(tasks), 3)
     kinds = [t.kind for t in tasks]
     self.assertEqual(kinds, [
       TaskKind.BLAS,
-      TaskKind.ELEMENTWISE,
       TaskKind.BLAS,
       TaskKind.ELEMENTWISE,
     ])

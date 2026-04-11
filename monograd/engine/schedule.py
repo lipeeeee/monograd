@@ -3,6 +3,7 @@ import weakref
 from math import prod
 from enum import auto, IntEnum
 from dataclasses import dataclass
+from collections import defaultdict
 from monograd.device import Device
 from monograd.dtype import ConstType, DType
 from monograd.uop import GroupOp, Ops
@@ -207,42 +208,48 @@ class BufferRef:
 
 # **** main scheduler compute ****
 def run_scheduler(root: UOp) -> list[KernelTask]:
-  # Go from the *root* uop and group srcs using *_pull* for each boundary
-  scheduled_kernels:list[KernelTask] = []
-  scheduled_nodes:set[int] = set()
+  # lean pre-pass: Count UNIQUE consumers for each node
+  consumers: dict[int, int] = defaultdict(int)
+  def _count(n: UOp, visited: set[int]):
+    if id(n) in visited: return
+    visited.add(id(n))
+    for src in set(n.src): 
+      consumers[id(src)] += 1
+      _count(src, visited)
+  _count(root, set())
+  scheduled_kernels: list[KernelTask] = []
+  scheduled_nodes: set[int] = set()
   def _schedule(node: UOp):
     if id(node) in scheduled_nodes: return
-    if is_invisible(node): # ignore invisible nodes but make new *root* of their children
+    if is_invisible(node):
       for src in node.src: _schedule(src)
       scheduled_nodes.add(id(node))
       return
-    if is_boundary(node) or node is root: # initiating kernel
-      group_ops: list[UOp] = []
-      def _pull(n: UOp):
-        # pull ALL ALU nodes into *group_ops* until boundary
-        # when boundary found: recursively make boundary the next root for a new kernel 
-        if id(n) in scheduled_nodes: return
-        if n.op in GroupOp.Input | GroupOp.Movement:
-          for src in n.src: _pull(src)
-          return
-        if is_fusable(n):
+    def _pull(n: UOp):
+      if id(n) in scheduled_nodes: return
+      if n.op in GroupOp.Input | GroupOp.Movement:
+        for src in n.src: _pull(src)
+        return
+      if is_fusable(n):
+        if consumers[id(n)] > 1: 
+          _schedule(n) # fanout detected! force to VRAM
+        else:
           scheduled_nodes.add(id(n))
           for src in n.src: _pull(src)
           group_ops.append(n)
-        elif is_boundary(n):
-          _schedule(n)
-      if is_boundary(node):
-        for src in node.src: _pull(src) # pull every ALU until boundaries
-        group_ops.append(node) # add the boundary op at the very end
-        scheduled_nodes.add(id(node))
-        if node.op in GroupOp.BLAS: kind = TaskKind.BLAS
-        elif node.op in GroupOp.Reduce:
-          kind = TaskKind.REDUCE_FULL if len(node.shape) == len(node.arg[0]) else TaskKind.REDUCE_STRIDED
-        elif node.op in {Ops.COPY, Ops.CONTIGUOUS}: kind = TaskKind.COPY
-        else: raise RuntimeError(f"unknown boundary kind: {node}")
-      else: # If the root is just an ALU op (c = a + b)
-        _pull(node)
-        kind = TaskKind.ELEMENTWISE
+      elif is_boundary(n):
+        _schedule(n)
+    # force kernel creation if it's a boundary, root, or multi-consumer
+    if is_boundary(node) or node is root or consumers[id(node)] > 1:
+      group_ops: list[UOp] = []
+      for src in node.src: _pull(src)
+      group_ops.append(node)
+      scheduled_nodes.add(id(node))
+      if node.op in GroupOp.BLAS: kind = TaskKind.BLAS
+      elif node.op in GroupOp.Reduce:
+        kind = TaskKind.REDUCE_FULL if len(node.shape) == len(node.arg[0]) else TaskKind.REDUCE_STRIDED
+      elif node.op in {Ops.COPY, Ops.CONTIGUOUS}: kind = TaskKind.COPY
+      else: kind = TaskKind.ELEMENTWISE
       scheduled_kernels.append(KernelTask(kind, group_ops, _collect_inputs(group_ops)))
   _schedule(root)
   return scheduled_kernels
