@@ -20,7 +20,7 @@ def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
 # uop utils
 def is_scalar(uop:UOp , strides=(1,)) -> bool: return uop.op is Ops.CONST or all(s == 0 for s in strides)
 def is_fusable(uop:UOp) -> bool: return uop.op in GroupOp.ALU # NOTE: Not checking CAST because it is in Unary
-def is_invisible(uop:UOp) -> bool: return uop.op in GroupOp.Movement
+def is_invisible(uop:UOp) -> bool: return uop.op in GroupOp.Movement | GroupOp.Input | {Ops.SINK}
 def is_boundary(uop:UOp) -> bool: return uop.op in GroupOp.BLAS | GroupOp.Reduce | {Ops.COPY, Ops.CONTIGUOUS}
 
 class TaskKind(IntEnum):
@@ -206,24 +206,45 @@ class BufferRef:
     return f"BufferRef(op={self.uop.op}, shape={self.shape}, strides={self.strides})"
 
 # **** main scheduler compute ****
-def run_scheduler(root:UOp) -> list[KernelTask]:
-  nodes = toposort(root, lambda u: u.src)
-  current_group: list[UOp] = []
-  scheduled_kernels: list[KernelTask] = []
-  for node in nodes:
-    if node.op in GroupOp.Input | GroupOp.Movement | {Ops.SINK}: continue # invisible/free ops
-    elif is_fusable(node): current_group.append(node)
-    elif is_boundary(node):
-      _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels)
-      kind:TaskKind|None = None
-      if node.op in GroupOp.BLAS: kind = TaskKind.BLAS
-      elif node.op in GroupOp.Reduce:
-        if len(node.shape) == len(node.arg[0]): kind = TaskKind.REDUCE_FULL
-        else: kind = TaskKind.REDUCE_STRIDED
-      elif node.op in {Ops.COPY, Ops.CONTIGUOUS}: kind = TaskKind.COPY
-      assert kind is not None, "could not determine boundary node kind {node}"
-      scheduled_kernels.append(KernelTask(kind, [node], _collect_inputs([node]))) # manual flush
-  _flush(TaskKind.ELEMENTWISE, current_group, scheduled_kernels) # flush any remaining ops
+def run_scheduler(root: UOp) -> list[KernelTask]:
+  # Go from the *root* uop and group srcs using *_pull* for each boundary
+  scheduled_kernels:list[KernelTask] = []
+  scheduled_nodes:set[int] = set()
+  def _schedule(node: UOp):
+    if id(node) in scheduled_nodes: return
+    if is_invisible(node): # ignore invisible nodes but make new *root* of their children
+      for src in node.src: _schedule(src)
+      scheduled_nodes.add(id(node))
+      return
+    if is_boundary(node) or node is root: # initiating kernel
+      group_ops: list[UOp] = []
+      def _pull(n: UOp):
+        # pull ALL ALU nodes into *group_ops* until boundary
+        # when boundary found: recursively make boundary the next root for a new kernel 
+        if id(n) in scheduled_nodes: return
+        if n.op in GroupOp.Input | GroupOp.Movement:
+          for src in n.src: _pull(src)
+          return
+        if is_fusable(n):
+          scheduled_nodes.add(id(n))
+          for src in n.src: _pull(src)
+          group_ops.append(n)
+        elif is_boundary(n):
+          _schedule(n)
+      if is_boundary(node):
+        for src in node.src: _pull(src) # pull every ALU until boundaries
+        group_ops.append(node) # add the boundary op at the very end
+        scheduled_nodes.add(id(node))
+        if node.op in GroupOp.BLAS: kind = TaskKind.BLAS
+        elif node.op in GroupOp.Reduce:
+          kind = TaskKind.REDUCE_FULL if len(node.shape) == len(node.arg[0]) else TaskKind.REDUCE_STRIDED
+        elif node.op in {Ops.COPY, Ops.CONTIGUOUS}: kind = TaskKind.COPY
+        else: raise RuntimeError(f"unknown boundary kind: {node}")
+      else: # If the root is just an ALU op (c = a + b)
+        _pull(node)
+        kind = TaskKind.ELEMENTWISE
+      scheduled_kernels.append(KernelTask(kind, group_ops, _collect_inputs(group_ops)))
+  _schedule(root)
   return scheduled_kernels
 def _collect_inputs(ops:list[UOp]) -> list[BufferRef]:
   # given *ops*, will return leaf/input nodes as buffer refs
@@ -239,10 +260,6 @@ def _collect_inputs(ops:list[UOp]) -> list[BufferRef]:
       seen.add(id(src))
       refs.append(ref)
   return refs
-def _flush(kind:TaskKind, current_group:list[UOp], scheduled_kernels:list[KernelTask]):
-  if not current_group: return
-  scheduled_kernels.append(KernelTask(kind, current_group.copy(), _collect_inputs(current_group)))
-  current_group.clear()
 
 def pprint_schedule(tasks:list[KernelTask]) -> None:
   print(f"Schedule: {len(tasks)} kernel(s)")

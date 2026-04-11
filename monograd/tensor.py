@@ -56,20 +56,24 @@ class Tensor(OpMixin):
   def const_like(self, x:ConstType) -> Tensor: return Tensor(x, self.requires_grad, self.device, self.dtype)
   def _reduceop(self, op:Ops, axis:int|tuple[int, ...]|None=None, keepdim:bool=False) -> Tensor:
     if DEBUG >= 3 and not op in GroupOp.Reduce: print(f"WARN: _reduceop({op}), not in GroupOp.Reduce")
-    assert op in GroupOp.Reduce, f"tried to _reduceop {op}, not in GrouOp.Reduce"
-    if axis is None: resolved_axis = tuple(range(self.ndim))
-    elif isinstance(axis, int): resolved_axis = (axis if axis >= 0 else axis + self.ndim,)
-    elif isinstance(axis, tuple): resolved_axis = tuple(x if x >= 0 else x + self.ndim for x in axis)
-    else: raise ValueError(f"unsupported axis: {axis}")
-    if self.ndim == 0: resolved_axis = () # 0D scalars
-    # compute reduced shape & create op
-    reduced_shape = tuple(1 if i in resolved_axis else s for i, s in enumerate(self.shape))
+    axes = tuple(range(self.ndim)) if axis is None else ((axis,) if isinstance(axis, int) else axis)
+    axes = tuple(a if a >= 0 else a + self.ndim for a in axes)
+    is_full_reduce = len(axes) == self.ndim
+    # ONLY decompose if it's a multi-axis partial reduction (e.g., (1, 2) on a 3D tensor)
+    if len(axes) > 1 and not is_full_reduce:
+      ret = self
+      for a in sorted(axes, reverse=True): ret = ret._reduceop(op, axis=a, keepdim=True)
+      if not keepdim:
+        final_shape = tuple(s for i, s in enumerate(self.shape) if i not in axes)
+        return ret.reshape(final_shape if final_shape else (1,))
+      return ret
+    # axes: either a single axis OR a full reduce.
+    reduced_shape = tuple(1 if i in axes else s for i, s in enumerate(self.shape))
     ret = Tensor.__new__(Tensor)
-    ret.uop = UOp(op, self.dtype, (self.uop,), (resolved_axis, reduced_shape))
+    ret.uop = UOp(op, self.dtype, (self.uop,), (axes, reduced_shape))
     ret.requires_grad = self.requires_grad
-    # handle keepdim
     if not keepdim:
-      final_shape = tuple(s for i, s in enumerate(self.shape) if i not in resolved_axis)
+      final_shape = tuple(s for i, s in enumerate(self.shape) if i not in axes)
       return ret.reshape(final_shape if final_shape else (1,))
     return ret
   def _mop(self, op:Ops, arg) -> Tensor:

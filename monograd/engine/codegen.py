@@ -44,7 +44,7 @@ CL_OP: dict[Ops, Callable] = {
   # Ops.CAST:   None,  # handled specially
   # ternary
   Ops.MULACC: lambda a, b, c: f"fma({a}, {b}, {c})",
-  Ops.WHERE:  lambda a, b, c: f"({a} ? {b} : {c})",
+  Ops.WHERE:  lambda a, b, c: f"({a} != 0 ? {b} : {c})", # a != 0 allows a to be valid in all/most cases
   # reduce
   Ops.REDUCEMAX:    lambda a, b:    f"max({a}, {b})",
   Ops.SUM:          lambda a, b:    f"{a} + {b}", # this is computed in parallel
@@ -130,7 +130,8 @@ __kernel void {name}({', '.join(args)}) {{
   return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
 def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
-  n:int = prod(task.output_shape)
+  input_uop:UOp = task.ops[0].src[0]
+  n:int = prod(input_uop.shape)
   uop:UOp = task.output_uop
   dtype:str = cl_type(task.output_dtype)
   name:str = kernel_name(task)
@@ -159,13 +160,13 @@ __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, __local 
   return CompiledKernel(source, name, global_size=(n,), local_size=(local_size,), args=task.inputs, 
                         output_shape=task.output_shape, output_dtype=task.output_dtype)
 def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
+  axis:int = task.ops[-1].arg[0][0]
+  assert isinstance(axis, int), f"_codegen_reduce_strided received invalid axis: {axis}, only 1 axis supported on strided"
   n:int = prod(task.output_shape)
   uop:UOp = task.output_uop
   name:str = kernel_name(task)
   dtype:str = cl_type(task.output_dtype)
   input_buf:BufferRef = task.inputs[0]
-  axis:int = task.ops[0].arg[0][0] 
-  assert isinstance(axis, int)
   source:str = f"""{render_pragmas(task)}
 __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
   int gid = get_global_id(0);

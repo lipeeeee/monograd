@@ -19,10 +19,12 @@
 - The Buffer class supports offsets and bases (self._base), but this logic is not fully integrated with the execution engine. If a KernelTask operates on a memory view, the codegen must inject the offset into the physical address calculation.
 - _collect_inputs iterates through the sources of every operation in the group. For large fused groups, this scales poorly. Replacing the nested loops with a set-based traversal will reduce scheduler overhead. (does this matter tho? (does this matter tho? profile it later)
 - opencl kernel profiling/benchmarking into saving optimal params
+- flatten? (zero-copy preferably)
+- graph viz
 
 # After codegen
 - monospec
-- test contiguous & padding behaviours
+- test contiguous & padding behaviours & _reduceop(axis_tuple) and axis_scalar & new scheduler
 - there is alot of repeted code in codegen, look into it
 - make DEBUG >= 1 print(source) into 1 line
 - document contextvars/envvars
