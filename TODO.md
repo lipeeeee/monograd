@@ -24,6 +24,7 @@
 
 # After codegen
 - monospec
+- stress test scheduler and understand it fully with tests
 - test contiguous & padding behaviours & _reduceop(axis_tuple) and axis_scalar & new scheduler
 - there is alot of repeted code in codegen, look into it
 - make DEBUG >= 1 print(source) into 1 line

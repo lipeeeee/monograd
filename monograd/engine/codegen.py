@@ -7,13 +7,17 @@ from monograd.uop.ops import UOp, identity_element
 from monograd.uop import GroupOp, Ops
 from monograd.utils import DEBUG
 
+# 1 entrypoint: codegen() -> CompiledKernel
+# for every codegen: we should have a main template that supports math ops
+#   do we store templates outside functions?; doesnt really have much utility
+# there is alot of repeated code. 
 
 # WARN: We shouldnt launch kernels with large global sizes
 # query gpu to figure out limits and adapt (also shouldnt launch not multiple of 2 global sizes)
 _local_size_tmp = 256 # NOTE: local_size should be computed
 
 @dataclass
-class CompiledKernel:
+class CompiledKernel: # NOTE: Should this be cached???!!!!!!
   source: str
   name: str
   global_size: tuple[int, ...]        # OpenCL global work size
@@ -41,7 +45,7 @@ CL_OP: dict[Ops, Callable] = {
   Ops.SQRT:   lambda a:       f"sqrt({a})",
   Ops.EXP:    lambda a:       f"exp2({a} * 1.4426950408889634f)",   # exp(x) = exp2(x / ln(2)) = exp2(x * log2(e))
   Ops.LOG:    lambda a:       f"(log2({a}) * 0.6931471805599453f)", # log(x) = log2(x) * ln(2)
-  # Ops.CAST:   None,  # handled specially
+  # Ops.CAST:   None,         # handled in *cl_const()* 
   # ternary
   Ops.MULACC: lambda a, b, c: f"fma({a}, {b}, {c})",
   Ops.WHERE:  lambda a, b, c: f"({a} != 0 ? {b} : {c})", # a != 0 allows a to be valid in all/most cases
