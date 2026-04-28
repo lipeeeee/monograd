@@ -16,6 +16,11 @@ from monograd.utils import DEBUG
 # query gpu to figure out limits and adapt (also shouldnt launch not multiple of 2 global sizes)
 _local_size_tmp = 256 # NOTE: local_size should be computed
 
+C_KERNEL_TEMPLATE = """{pragmas}
+__kernel void {name}({args}, __global {out_dtype}* out{extra_args}, const int n) {{
+{body}
+}}"""
+
 @dataclass
 class CompiledKernel: # NOTE: Should this be cached???!!!!!!
   source: str
@@ -90,6 +95,18 @@ def render_op(uop:UOp, src_exprs:list[str]) -> str:
     return f"({cl_type(uop.dtype)}){src_exprs[0]}"
   assert uop.op in CL_OP, f"unhandled op in render_op: {uop.op}"
   return CL_OP[uop.op](*src_exprs)
+def render_kernel(task:KernelTask, body:str, global_size:tuple, local_size:tuple|None=None, extra_args:str="") -> CompiledKernel:
+  name = kernel_name(task)
+  args = ", ".join(f"__global const {cl_type(b.uop.dtype)}* in{i}" for i, b in enumerate(task.inputs))
+  source = C_KERNEL_TEMPLATE.format(
+      pragmas=render_pragmas(task),
+      name=name,
+      args=args,
+      out_dtype=cl_type(task.output_dtype),
+      body=body,
+      extra_args=extra_args) # extra_args mainly used for __local stuff
+  if DEBUG >= 1: print(source)
+  return CompiledKernel(source, name, global_size, local_size, task.inputs, task.output_shape, task.output_dtype)
 
 
 # **** actual codegen ****
@@ -103,7 +120,7 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # elem
       if _base.op is Ops.CONST: src_exprs.append(cl_const(_base.arg[0], _base.dtype))
       elif id(_base) in val_map: src_exprs.append(val_map[id(_base)])
       else: raise RuntimeError(f"src {_base.op} not in val_map - toposort broken?")
-    lines.append(f"  {cl_type(op.dtype)} {var} = {render_op(op, src_exprs)};")
+    lines.append(f"{cl_type(op.dtype)} {var} = {render_op(op, src_exprs)};")
     if DEBUG >= 5: print(f"{op.op.name}({op.src}) -> {lines[-1].strip()}")
     val_map[id(op)] = var
   return lines
@@ -114,40 +131,30 @@ def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.COPY: return _codegen_copy(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
-  name:str = kernel_name(task)
   n:int = prod(task.output_shape)
-  val_map:dict[int, str] = {}
-  args:list[str] = []
-  for i, buff in enumerate(task.inputs): # NOTE: do not generate variable lines for each input and hope compiler catches them and makes them 1 memory read only
-    args.append(f"__global const {cl_type(buff.uop.dtype)}* in{i}")
-    val_map[id(buff.uop)] = buff.load_expr(f"in{i}", "gid") # f"in{i}[{buff.index_expr('gid')}]"
-  args.extend([f"__global {cl_type(task.output_dtype)}* out", "const int n"])
-  body:str = "\n".join(render_op_chain(task.ops, val_map))
-  source:str = f"""{render_pragmas(task)}
-__kernel void {name}({', '.join(args)}) {{
-  int gid = get_global_id(0);
+  val_map:dict[int, str] = {id(b.uop): b.load_expr(f"in{i}", 'gid') for i, b in enumerate(task.inputs)}
+  math_lines:list[str] = render_op_chain(task.ops, val_map)
+  source:str = f"""  int gid = get_global_id(0);
   if (gid >= n) return;
-{body}
-  out[gid] = v{len(task.ops) - 1};
-}}"""
-  if DEBUG >= 1: print(source)
-  return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
-                        output_shape=task.output_shape, output_dtype=task.output_dtype)
+  {'\n  '.join(math_lines)}
+  out[gid] = {val_map[id(task.ops[-1])]};"""
+  return render_kernel(task, source, global_size=(n,))
 def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
-  input_uop:UOp = task.ops[0].src[0]
-  n:int = prod(input_uop.shape)
+  n:int = prod(task.inputs[0].uop.shape)
   uop:UOp = task.output_uop
   dtype:str = cl_type(task.output_dtype)
-  name:str = kernel_name(task)
-  source:str = f"""{render_pragmas(task)}
-__kernel void {name}(__global const {dtype}* in, __global {dtype}* out, __local {dtype}* scratch, const int n) {{
-  int lid = get_local_id(0);
+  val_map = {id(b.uop): b.load_expr(f"in{i}", 'i') for i, b in enumerate(task.inputs)}
+  math_lines = render_op_chain(task.ops[:-1], val_map)
+  reduce_val = val_map[id(_resolve_base(task.ops[-1].src[0]))] # we apply reduction via this var; which is the last from math ops
+  math_lines.append(f"acc = {render_op(uop, ['acc', reduce_val])};") # NOTE: this is the actual reduction line
+  source:str = f"""  int lid = get_local_id(0);
   int gid = get_global_id(0);
   int g_stride = get_global_size(0);
   int l_size = get_local_size(0);
   {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
   for (int i = gid; i < n; i += g_stride) {{
-    acc = {render_op(uop, ['acc', 'in[i]'])};
+    {'\n    '.join(math_lines)}
+    
   }}
   scratch[lid] = acc;
   barrier(CLK_LOCAL_MEM_FENCE);
@@ -158,43 +165,30 @@ __kernel void {name}(__global const {dtype}* in, __global {dtype}* out, __local 
   if (lid == 0) {{
     int group_id = get_group_id(0);
     out[group_id] = scratch[0];
-  }}
-}}"""
-  if DEBUG >= 1: print(source)
-  return CompiledKernel(source, name, global_size=(n,), local_size=(local_size,), args=task.inputs, 
-                        output_shape=task.output_shape, output_dtype=task.output_dtype)
+  }}"""
+  return render_kernel(task, source, global_size=(local_size,), local_size=(local_size,), extra_args=f", __local {dtype}* scratch")
 def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
-  axis:int = task.ops[-1].arg[0][0]
-  assert isinstance(axis, int), f"_codegen_reduce_strided received invalid axis: {axis}, only 1 axis supported on strided"
   n:int = prod(task.output_shape)
   uop:UOp = task.output_uop
-  name:str = kernel_name(task)
   dtype:str = cl_type(task.output_dtype)
-  input_buf:BufferRef = task.inputs[0]
-  source:str = f"""{render_pragmas(task)}
-__kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
-  int gid = get_global_id(0);
+  axis:int = task.ops[-1].arg[0][0]
+  assert isinstance(axis, int), f"_codegen_reduce_strided received invalid axis: {axis}, only 1 axis supported on strided"
+  val_map = {id(b.uop): b.reduce_load_expr(axis, f"in{i}", 'gid') for i, b in enumerate(task.inputs)}
+  math_lines = render_op_chain(task.ops[:-1], val_map)
+  reduce_val = val_map[id(_resolve_base(task.ops[-1].src[0]))] # we apply reduction via this var; which is the last from math ops
+  math_lines.append(f"acc = {render_op(uop, ['acc', reduce_val])};") # NOTE: this is the actual reduction line
+  source:str = f"""  int gid = get_global_id(0);
   if (gid >= n) return;
   {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
-  for (int k = 0; k < {input_buf.shape[axis]}; k++) {{ // k < reduce_size
-    {dtype} val = {input_buf.reduce_load_expr(axis, 'in', 'gid')};
-    acc = {render_op(uop, ['acc', 'val'])};
+  for (int k = 0; k < {task.inputs[0].shape[axis]}; k++) {{ // k < reduce_size
+    {'\n    '.join(math_lines)}
   }}
-  out[gid] = acc;
-}}"""
-  if DEBUG >= 1: print(source)
-  return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
-                        output_shape=task.output_shape, output_dtype=task.output_dtype)
+  out[gid] = acc;"""
+  return render_kernel(task, source, global_size=(n,))
 def _codegen_copy(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
-  name:str = kernel_name(task)
-  dtype:str = cl_type(task.output_dtype)
-  source:str = f"""{render_pragmas(task)}
-__kernel void {name}(__global const {dtype}* in, __global {dtype}* out, const int n) {{
-  int gid = get_global_id(0);
+  source:str = """  int gid = get_global_id(0);
   if (gid >= n) return;
-  out[gid] = {task.inputs[0].load_expr('in', 'gid')};
-}}"""
-  if DEBUG >= 1: print(source)
-  return CompiledKernel(source, name, global_size=(n,), local_size=None, args=task.inputs, 
-                        output_shape=task.output_shape, output_dtype=task.output_dtype)
+  out[gid] = {task.inputs[0].load_expr('in0', 'gid')};
+  """
+  return render_kernel(task, source, global_size=(n,))

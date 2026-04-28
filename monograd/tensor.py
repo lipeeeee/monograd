@@ -187,6 +187,7 @@ if __name__ == "__main__":
   e = c.sum(axis=0) + d
   d = e.max().uop
   d = rewrite_graph(d)
+  # d = (a + b * 3 * 6 * 8).uop
 
 
   print("=== UOP GRAPH ===")

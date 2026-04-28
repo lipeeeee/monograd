@@ -5,6 +5,9 @@ data/**/*
 # generated stuff
 poetry.lock
 
+# dev-specific
+flags.txt
+
 # **** default py gitignore
 # Byte-compiled / optimized / DLL files
 __pycache__/
