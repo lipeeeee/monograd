@@ -89,7 +89,7 @@ class Tensor(OpMixin):
     ret.requires_grad = self.requires_grad
     return ret
   def _binop(self, op:Ops, x:Tensor, reverse:bool=False) -> Tensor:
-    if DEBUG >= 3 and not op in GroupOp.Binary: print(f"WARN: _binop({op}), not in GroupOp.Binary")
+    if DEBUG >= 4 and not op in GroupOp.Binary: print(f"WARN: _binop({op}), not in GroupOp.Binary")
     lhs, rhs = self._broadcasted(x, reverse)
     assert lhs.device == rhs.device, f"device {lhs.device} doesn't match {rhs.device}"
     target_dtype = most_upper_dtype(lhs.dtype, rhs.dtype)

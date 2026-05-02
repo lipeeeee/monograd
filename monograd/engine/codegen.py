@@ -7,14 +7,13 @@ from monograd.uop.ops import UOp, identity_element
 from monograd.uop import GroupOp, Ops
 from monograd.utils import DEBUG
 
-# 1 entrypoint: codegen() -> CompiledKernel
-# for every codegen: we should have a main template that supports math ops
-#   do we store templates outside functions?; doesnt really have much utility
-# there is alot of repeated code. 
-
-# WARN: We shouldnt launch kernels with large global sizes
+# NOTE: We shouldnt launch kernels with large global sizes
 # query gpu to figure out limits and adapt (also shouldnt launch not multiple of 2 global sizes)
-_local_size_tmp = 256 # NOTE: local_size should be computed
+# hardcoding _local_size_tmp = 256 is safe, but sub-optimal.
+# If a user runs tensor.sum() on a tensor with exactly 64 elements, we will spawn 256 threads.
+  # 192 of them will do zero work but will still consume hardware registers and participate in the barrier() syncs.
+  # The local_size should eventually be calculated dynamically based on min(next_power_of_2(n), MAX_WORK_GROUP_SIZE).
+_local_size_tmp = 256
 
 C_KERNEL_TEMPLATE = """{pragmas}
 __kernel void {name}({args}, __global {out_dtype}* out{extra_args}, const int n) {{
@@ -154,7 +153,6 @@ def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
   {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
   for (int i = gid; i < n; i += g_stride) {{
     {'\n    '.join(math_lines)}
-    
   }}
   scratch[lid] = acc;
   barrier(CLK_LOCAL_MEM_FENCE);
@@ -187,7 +185,7 @@ def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
   return render_kernel(task, source, global_size=(n,))
 def _codegen_copy(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
-  source:str = """  int gid = get_global_id(0);
+  source:str = f"""  int gid = get_global_id(0);
   if (gid >= n) return;
   out[gid] = {task.inputs[0].load_expr('in0', 'gid')};
   """

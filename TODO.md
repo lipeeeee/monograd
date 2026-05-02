@@ -22,6 +22,9 @@
 - flatten? (zero-copy preferably)
 - graph viz
 
+- memory coalescing in reduce_strided inner dim
+- multi-axis 1 pass reduction
+
 # After codegen
 - monospec
 - stress test scheduler and understand it fully with tests
