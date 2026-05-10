@@ -126,7 +126,7 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # elem
 def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
   if task.kind is TaskKind.REDUCE_FULL: return _codegen_reduce_full(task, _local_size_tmp)
-  if task.kind is TaskKind.REDUCE_STRIDED: return _codegen_reduce_strided(task)
+  if task.kind is TaskKind.REDUCE_STRIDED: return _codegen_reduce_strided_outer(task)
   if task.kind is TaskKind.COPY: return _codegen_copy(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
@@ -139,7 +139,6 @@ def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
   out[gid] = {val_map[id(task.ops[-1])]};"""
   return render_kernel(task, source, global_size=(n,))
 def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
-  n:int = prod(task.inputs[0].uop.shape)
   uop:UOp = task.output_uop
   dtype:str = cl_type(task.output_dtype)
   val_map = {id(b.uop): b.load_expr(f"in{i}", 'i') for i, b in enumerate(task.inputs)}
@@ -165,7 +164,7 @@ def _codegen_reduce_full(task:KernelTask, local_size:int) -> CompiledKernel:
     out[group_id] = scratch[0];
   }}"""
   return render_kernel(task, source, global_size=(local_size,), local_size=(local_size,), extra_args=f", __local {dtype}* scratch")
-def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
+def _codegen_reduce_strided_outer(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
   uop:UOp = task.output_uop
   dtype:str = cl_type(task.output_dtype)
@@ -183,6 +182,38 @@ def _codegen_reduce_strided(task:KernelTask) -> CompiledKernel:
   }}
   out[gid] = acc;"""
   return render_kernel(task, source, global_size=(n,))
+def _codegen_reduce_strided_inner(task:KernelTask, local_size:int) -> CompiledKernel:
+  # (1024, 256).reduce(axis=1)  ---->  n_batch = 1024, and we launch 1024 threads, each processes 256 elems
+  n_batch:int = prod(task.output_shape)
+  uop:UOp = task.output_uop
+  dtype:str = cl_type(task.output_dtype)
+  axis:int = task.ops[-1].arg[0][0]
+  assert isinstance(axis, int), f"_codegen_reduce_inner received invalid axis: {axis}"
+  # n_reduce is the length of the contiguous row we are sweeping
+  n_reduce:int = task.inputs[0].shape[axis]
+  # Trick BufferRef: Pass 'batch_idx' as the output coordinate variable instead of 'gid'
+  val_map = {id(b.uop): b.reduce_load_expr(axis, f"in{i}", 'batch_idx') for i, b in enumerate(task.inputs)}
+  math_lines = render_op_chain(task.ops[:-1], val_map)
+  reduce_val = val_map[id(_resolve_base(task.ops[-1].src[0]))]
+  math_lines.append(f"acc = {render_op(uop, ['acc', reduce_val])};")
+  source:str = f"""  int lid = get_local_id(0);
+  int l_size = get_local_size(0);
+  int batch_idx = get_global_id(1); 
+  if (batch_idx >= {n_batch}) return;
+  {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
+  for (int k = lid; k < {n_reduce}; k += l_size) {{ 
+    {'\n    '.join(math_lines)}
+  }}
+  scratch[lid] = acc;
+  barrier(CLK_LOCAL_MEM_FENCE);
+  for (int s = l_size / 2; s > 0; s >>= 1) {{
+    if (lid < s) scratch[lid] = {render_op(uop, ['scratch[lid]', 'scratch[lid + s]'])};
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }}
+  if (lid == 0) {{
+    out[batch_idx] = scratch[0];
+  }}"""
+  return render_kernel(task, source, global_size=(local_size, n_batch), local_size=(local_size, 1), extra_args=f", __local {dtype}* scratch")
 def _codegen_copy(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
   source:str = f"""  int gid = get_global_id(0);

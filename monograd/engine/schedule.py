@@ -121,7 +121,7 @@ class BufferRef:
       else: terms.append(f"{coord} * {stride}")
     if not terms: return "0"
     return " + ".join(terms)
-  def reduce_index_expr(self, reduce_axis:int, gid:str="gid") -> str:
+  def reduce_index_expr(self, reduce_axis:int, gid:str="gid") -> str: # single-axis reduction
     # get the shape of the output (gid domain) by removing the reduced axis
     output_shape = list(self.shape)
     output_shape.pop(reduce_axis)
@@ -146,6 +146,46 @@ class BufferRef:
         if (valid_mask := self.padding_op.arg[1][i][0]) > 0: coord = f"({coord} - {valid_mask})" # type: ignore
       if stride == 1: terms.append(coord)
       else: terms.append(f"{coord} * {stride}")
+    return " + ".join(terms) if terms else "0"
+  def reduce_index_expr_multi(self, reduce_axes:tuple[int, ...], gid:str="gid", k:str="k") -> str: # multi-axis reduction
+    reduce_axes = tuple(sorted(reduce_axes))
+    output_shape = [s for i, s in enumerate(self.shape) if i not in reduce_axes]
+    reduce_shape = [self.shape[i] for i in reduce_axes]
+    # Unpacks a flat 1D index into N-dimensional coordinates based on a target shape
+    def unpack_index(flat_var: str, shape: list[int]) -> list[str]:
+      if not shape: return []
+      coords: list[str] = []
+      remaining = flat_var
+      for i in range(len(shape)):
+        below = prod(shape[i+1:])
+        if below == 1: 
+          coords.append(remaining)
+        else:
+          coords.append(f"({remaining} / {below})")
+          remaining = f"({remaining} % {below})"
+      return coords
+    gid_coords = unpack_index(gid, output_shape)
+    k_coords = unpack_index(k, reduce_shape)
+    # Merge output and reduction coordinates back into the original memory layout
+    input_coords: list[str] = []
+    gid_idx, k_idx = 0, 0
+    for i in range(len(self.shape)):
+      if i in reduce_axes:
+        input_coords.append(k_coords[k_idx])
+        k_idx += 1
+      else:
+        input_coords.append(gid_coords[gid_idx])
+        gid_idx += 1
+    # Apply physical strides and padding guards
+    terms: list[str] = []
+    for i, (coord, stride) in enumerate(zip(input_coords, self.strides)):
+      if stride == 0: continue
+      if self.is_padded:
+        if (valid_mask := self.padding_op.arg[1][i][0]) > 0: coord = f"({coord} - {valid_mask})" # type: ignore
+      if stride == 1: 
+        terms.append(coord)
+      else: 
+        terms.append(f"({coord}) * {stride}") 
     return " + ".join(terms) if terms else "0"
   def load_expr(self, buf_name:str, gid:str="gid") -> str:
     idx_str:str = self.index_expr(gid)
