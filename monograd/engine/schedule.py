@@ -162,26 +162,25 @@ class BufferRef:
       else:
         input_coords.append(gid_coords[gid_idx])
         gid_idx += 1
+    # fast path
+    if not self.is_padded:
+      terms = [f"{c}" if s == 1 else f"({c}) * {s}" for c, s in zip(input_coords, self.strides) if s != 0]
+      return " + ".join(terms) if terms else "0", "true"
     # Apply physical strides and padding guards
     terms: list[str] = []
     mask_conditions: list[str] = []
-    for i, (coord, stride) in enumerate(zip(input_coords, self.strides)):
-      # Handle Padding Mask Generation
-      if self.is_padded and self.padding_op.arg[1][i] != (0, 0): # type: ignore
-        pad_before, pad_after = self.padding_op.arg[1][i] # type: ignore
-        padded_size = self.shape[i]
-        # Valid bounds: pad_before <= coord < (padded_size - pad_after)
-        if pad_before > 0:
-          mask_conditions.append(f"({coord} >= {pad_before})")
-        if pad_after > 0:
-          mask_conditions.append(f"({coord} < {padded_size - pad_after})")
-        # Shift coordinate to map back to the unpadded physical tensor
-        coord = f"({coord} - {pad_before})"
+    valid_mask: tuple[tuple[int, int], ...] = self.padding_op.arg[1] # type: ignore
+    for i, (coord, stride, (start, end)) in enumerate(zip(input_coords, self.strides, valid_mask)):
+      if start > 0:
+        mask_conditions.append(f"({coord} >= {start})")
+      if end < self.shape[i]: 
+        mask_conditions.append(f"({coord} < {end})")
       if stride == 0: continue
+      shifted_coord = f"({coord} - {start})" if start > 0 else coord
       if stride == 1: 
-        terms.append(coord)
+        terms.append(shifted_coord)
       else: 
-        terms.append(f"({coord}) * {stride}") 
+        terms.append(f"{shifted_coord} * {stride}")
     index_math = " + ".join(terms) if terms else "0"
     mask_math = " && ".join(mask_conditions) if mask_conditions else "true"
     return index_math, mask_math
