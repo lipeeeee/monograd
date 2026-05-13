@@ -120,8 +120,8 @@ class BufferRef:
       # Build Mask
       if pad_before > 0:
         conditions.append(f"({coord} >= {pad_before})")
-      if pad_after > 0:
-        conditions.append(f"({coord} < {self.shape[i] - pad_after})")
+      if pad_after < self.shape[i]:
+        conditions.append(f"({coord} < {pad_after})")
       # Build Index (Shift coordinate back to physical memory)
       if stride == 0: continue
       shifted_coord = f"({coord} - {pad_before})" if pad_before > 0 else coord
