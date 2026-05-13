@@ -335,25 +335,27 @@ class TestIndexExpr(unittest.TestCase):
   def test_const_returns_zero(self):
     c   = const(2.0)
     ref = BufferRef.from_uop(c)
-    self.assertEqual(ref.index_expr("gid"), "0")
+    expr, _ = ref.index_expr("gid")
+    self.assertEqual(expr, "0")
 
   def test_fully_broadcast_returns_zero(self):
     a   = load((1,))
     r   = reshape(a, (1, 1))
     e   = expand(r, (3, 4))
     ref = BufferRef.from_uop(e)
-    self.assertEqual(ref.index_expr("gid"), "0")
+    expr, _ = ref.index_expr("gid")
+    self.assertEqual(expr, "0")
 
   def test_1d_contiguous_sequential(self):
     ref  = BufferRef.from_uop(load((6,)))
-    expr = ref.index_expr("gid")
+    expr, _ = ref.index_expr("gid")
     for i in range(6):
       self.assertEqual(eval_index(expr, i), i)
 
   def test_2d_contiguous_sequential(self):
     """flat gid should map to same position in row-major layout"""
     ref  = BufferRef.from_uop(load((2, 3)))
-    expr = ref.index_expr("gid")
+    expr, _ = ref.index_expr("gid")
     for i in range(6):
       self.assertEqual(eval_index(expr, i), i)
 
@@ -363,7 +365,7 @@ class TestIndexExpr(unittest.TestCase):
     r    = reshape(a, (1, 3))
     e    = expand(r, (2, 3))
     ref  = BufferRef.from_uop(e)
-    expr = ref.index_expr("gid")
+    expr, _ = ref.index_expr("gid")
     for i in range(6):
       self.assertEqual(eval_index(expr, i), i % 3)
 
@@ -373,7 +375,7 @@ class TestIndexExpr(unittest.TestCase):
     r    = reshape(a, (3, 1))
     e    = expand(r, (3, 2))
     ref  = BufferRef.from_uop(e)
-    expr = ref.index_expr("gid")
+    expr, _ = ref.index_expr("gid")
     expected = [0, 0, 1, 1, 2, 2]
     for i in range(6):
       self.assertEqual(eval_index(expr, i), expected[i])
@@ -387,7 +389,7 @@ class TestIndexExpr(unittest.TestCase):
 
   def test_3d_contiguous_sequential(self):
     ref  = BufferRef.from_uop(load((2, 3, 4)))
-    expr = ref.index_expr("gid")
+    expr, _ = ref.index_expr("gid")
     for i in range(24):
       self.assertEqual(eval_index(expr, i), i)
 
@@ -397,7 +399,7 @@ class TestReduceIndexExpr(unittest.TestCase):
   def test_reduce_axis_0_2d(self):
     """Shape (3, 4) reduce axis 0. Output shape (4,). gid goes 0-3, k goes 0-2."""
     ref = BufferRef.from_uop(load((3, 4)))
-    expr = ref.reduce_index_expr(reduce_axis=0)
+    expr, _ = ref.reduce_index_expr_multi(reduce_axes=(0, ))
     # Expected: k * 4 + gid
     for gid in range(4):
       for k in range(3):
@@ -406,7 +408,7 @@ class TestReduceIndexExpr(unittest.TestCase):
   def test_reduce_axis_1_2d(self):
     """Shape (3, 4) reduce axis 1. Output shape (3,). gid goes 0-2, k goes 0-3."""
     ref = BufferRef.from_uop(load((3, 4)))
-    expr = ref.reduce_index_expr(reduce_axis=1)
+    expr, _ = ref.reduce_index_expr_multi(reduce_axes=(1, ))
     # Expected: gid * 4 + k
     for gid in range(3):
       for k in range(4):
@@ -415,7 +417,7 @@ class TestReduceIndexExpr(unittest.TestCase):
   def test_reduce_middle_axis_3d(self):
     """Shape (2, 3, 4) reduce axis 1. Output (2, 4) -> 8 threads."""
     ref = BufferRef.from_uop(load((2, 3, 4)))
-    expr = ref.reduce_index_expr(reduce_axis=1)
+    expr, _ = ref.reduce_index_expr_multi(reduce_axes=(1, ))
     # Input strides: (12, 4, 1)
     # Formula: (gid // 4) * 12 + k * 4 + (gid % 4)
     for gid in range(8):
@@ -428,7 +430,7 @@ class TestReduceIndexExpr(unittest.TestCase):
     a = load((3, 4))
     p = permute(a, (1, 0))
     ref = BufferRef.from_uop(p)
-    expr = ref.reduce_index_expr(reduce_axis=0)
+    expr, _ = ref.reduce_index_expr_multi(reduce_axes=(0, ))
     # Original strides: (4, 1). New shape: (4, 3). New strides: (1, 4).
     # Expected: k * 1 + gid * 4
     for gid in range(3):
@@ -441,7 +443,7 @@ class TestReduceIndexExpr(unittest.TestCase):
     r = reshape(a, (1, 4))
     e = expand(r, (3, 4))
     ref = BufferRef.from_uop(e)
-    expr = ref.reduce_index_expr(reduce_axis=0)
+    expr, _ = ref.reduce_index_expr_multi(reduce_axes=(0, ))
     # Shape: (3, 4). Strides: (0, 1).
     # Since stride 0 is 0, 'k * 0' is skipped in the expression string.
     for gid in range(4):

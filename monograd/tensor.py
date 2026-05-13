@@ -58,16 +58,6 @@ class Tensor(OpMixin):
     if DEBUG >= 3 and not op in GroupOp.Reduce: print(f"WARN: _reduceop({op}), not in GroupOp.Reduce")
     axes = tuple(range(self.ndim)) if axis is None else ((axis,) if isinstance(axis, int) else axis)
     axes = tuple(a if a >= 0 else a + self.ndim for a in axes)
-    is_full_reduce = len(axes) == self.ndim
-    # ONLY decompose if it's a multi-axis partial reduction (e.g., (1, 2) on a 3D tensor)
-    if len(axes) > 1 and not is_full_reduce:
-      ret = self
-      for a in sorted(axes, reverse=True): ret = ret._reduceop(op, axis=a, keepdim=True)
-      if not keepdim:
-        final_shape = tuple(s for i, s in enumerate(self.shape) if i not in axes)
-        return ret.reshape(final_shape if final_shape else (1,))
-      return ret
-    # axes: either a single axis OR a full reduce.
     reduced_shape = tuple(1 if i in axes else s for i, s in enumerate(self.shape))
     ret = Tensor.__new__(Tensor)
     ret.uop = UOp(op, self.dtype, (self.uop,), (axes, reduced_shape))
@@ -189,6 +179,17 @@ if __name__ == "__main__":
   d = rewrite_graph(d)
   # d = (a + b * 3 * 6 * 8).uop
 
+  a = Tensor([
+      [[1.0, 2.0], [3.0, 4.0]], 
+      [[5.0, 6.0], [7.0, 8.0]]
+  ], device="gpu", dtype=dtypes.float32)
+  a_pad = a.pad(((0, 0), (1, 1), (1, 1)), value=-1.0)
+  b = (a_pad * 5.0) + 2.0
+  c = b.sum(axis=(1, 2)) 
+  d = a.sum(axis=(0, 1))
+  e = c + d
+  out = e.max().uop
+  d = rewrite_graph(out)
 
   print("=== UOP GRAPH ===")
   pprint_graph(d)

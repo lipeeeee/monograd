@@ -24,6 +24,10 @@
 
 - memory coalescing in reduce_strided inner dim
 - multi-axis 1 pass reduction
+    - apply multi-axis fix
+    - review strides, am i dumb?
+    - test reduce_index_expr_multi
+    - deprecate single axis reduction?
 
 # After codegen
 - monospec

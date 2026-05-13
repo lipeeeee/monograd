@@ -126,7 +126,13 @@ def render_op_chain(uops:list[UOp], val_map:dict[int, str]) -> list[str]: # elem
 def codegen(task:KernelTask) -> CompiledKernel:
   if task.kind is TaskKind.ELEMENTWISE: return _codegen_elementwise(task)
   if task.kind is TaskKind.REDUCE_FULL: return _codegen_reduce_full(task, _local_size_tmp)
-  if task.kind is TaskKind.REDUCE_STRIDED: return _codegen_reduce_strided_outer(task)
+  if task.kind is TaskKind.REDUCE_STRIDED:
+    reduce_axes = task.ops[-1].arg[0]
+    if isinstance(reduce_axes, int): reduce_axes = (reduce_axes,)
+    # Check if any of the reduced axes have a stride of 1 in the primary input
+    primary_strides = task.inputs[0].strides
+    if any(primary_strides[a] == 1 for a in reduce_axes): return _codegen_reduce_strided_inner(task, _local_size_tmp)
+    else: return _codegen_reduce_strided_outer(task)
   if task.kind is TaskKind.COPY: return _codegen_copy(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
@@ -168,16 +174,17 @@ def _codegen_reduce_strided_outer(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
   uop:UOp = task.output_uop
   dtype:str = cl_type(task.output_dtype)
-  axis:int = task.ops[-1].arg[0][0]
-  assert isinstance(axis, int), f"_codegen_reduce_strided received invalid axis: {axis}, only 1 axis supported on strided"
-  val_map = {id(b.uop): b.reduce_load_expr(axis, f"in{i}", 'gid') for i, b in enumerate(task.inputs)}
+  axes:tuple[int, ...] = task.ops[-1].arg[0]
+  if isinstance(axes, int): axes = (axes,)
+  reduce_volume:int = prod(task.inputs[0].shape[a] for a in axes) # flattned reduce size
+  val_map = {id(b.uop): b.reduce_load_expr_multi(axes, f"in{i}", gid='gid', k='k') for i, b in enumerate(task.inputs)}
   math_lines = render_op_chain(task.ops[:-1], val_map)
   reduce_val = val_map[id(_resolve_base(task.ops[-1].src[0]))] # we apply reduction via this var; which is the last from math ops
   math_lines.append(f"acc = {render_op(uop, ['acc', reduce_val])};") # NOTE: this is the actual reduction line
   source:str = f"""  int gid = get_global_id(0);
   if (gid >= n) return;
   {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
-  for (int k = 0; k < {task.inputs[0].shape[axis]}; k++) {{ // k < reduce_size
+  for (int k = 0; k < {reduce_volume}; k++) {{ // k < reduce_volume
     {'\n    '.join(math_lines)}
   }}
   out[gid] = acc;"""
@@ -187,12 +194,12 @@ def _codegen_reduce_strided_inner(task:KernelTask, local_size:int) -> CompiledKe
   n_batch:int = prod(task.output_shape)
   uop:UOp = task.output_uop
   dtype:str = cl_type(task.output_dtype)
-  axis:int = task.ops[-1].arg[0][0]
-  assert isinstance(axis, int), f"_codegen_reduce_inner received invalid axis: {axis}"
-  # n_reduce is the length of the contiguous row we are sweeping
-  n_reduce:int = task.inputs[0].shape[axis]
+  axes:tuple[int, ...] = task.ops[-1].arg[0]
+  if isinstance(axes, int): axes = (axes,)
+  reduce_volume:int = prod(task.inputs[0].shape[a] for a in axes) # flattned reduce size
   # Trick BufferRef: Pass 'batch_idx' as the output coordinate variable instead of 'gid'
-  val_map = {id(b.uop): b.reduce_load_expr(axis, f"in{i}", 'batch_idx') for i, b in enumerate(task.inputs)}
+  # val_map = {id(b.uop): b.reduce_load_expr(axis, f"in{i}", 'batch_idx') for i, b in enumerate(task.inputs)}
+  val_map = {id(b.uop): b.reduce_load_expr_multi(axes, f"in{i}", gid='batch_idx', k='k') for i, b in enumerate(task.inputs)}
   math_lines = render_op_chain(task.ops[:-1], val_map)
   reduce_val = val_map[id(_resolve_base(task.ops[-1].src[0]))]
   math_lines.append(f"acc = {render_op(uop, ['acc', reduce_val])};")
@@ -201,7 +208,7 @@ def _codegen_reduce_strided_inner(task:KernelTask, local_size:int) -> CompiledKe
   int batch_idx = get_global_id(1); 
   if (batch_idx >= {n_batch}) return;
   {dtype} acc = {cl_const(identity_element(uop.op, task.output_dtype), task.output_dtype)};
-  for (int k = lid; k < {n_reduce}; k += l_size) {{ 
+  for (int k = lid; k < {reduce_volume}; k += l_size) {{ 
     {'\n    '.join(math_lines)}
   }}
   scratch[lid] = acc;

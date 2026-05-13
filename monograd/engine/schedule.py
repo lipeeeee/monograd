@@ -96,58 +96,44 @@ class BufferRef:
     ret = BufferRef(cur, shape, strides, padding_op)
     _bufferref_cache[uop] = ret
     return ret
-  def index_expr(self, gid:str="gid") -> str: # generates C index expr
-    if is_scalar(self.uop, self.strides): return "0"
-    # build per-dim coordinate expressions from flat gid
-    # e.g. for output_shape=(2,3):
-    #   dim 0: coord = gid / 3
-    #   dim 1: coord = gid % 3
-    coords:list[str] = []
+  def index_expr(self, gid: str = "gid") -> tuple[str, str]:
+    if is_scalar(self.uop, self.strides): return "0", "true"
+    coords: list[str] = []
     remaining = gid
     for i, dim_size in enumerate(self.shape):
-      below = prod(self.shape[i+1:])  # product of all dims below this one
-      if below == 1: coords.append(remaining)
+      if dim_size == 1:
+        coords.append("0")
+        continue
+      below = prod(self.shape[i+1:])
+      if below == 1: 
+        coords.append(remaining)
       else:
         coords.append(f"({remaining} / {below})")
         remaining = f"({remaining} % {below})"
-    # build flat index from strides
-    # skip dims where stride is 0 (broadcast — contributes nothing)
-    terms:list[str] = []
-    for i, (coord, stride) in enumerate(zip(coords, self.strides)):
-      if stride == 0: continue # broadcast dim, skip
-      if self.is_padded:
-        if (valid_mask := self.padding_op.arg[1][i][0]) > 0: coord = f"({coord} - {valid_mask})" # type: ignore
-      if stride == 1: terms.append(coord)
-      else: terms.append(f"{coord} * {stride}")
-    if not terms: return "0"
-    return " + ".join(terms)
-  def reduce_index_expr(self, reduce_axis:int, gid:str="gid") -> str: # single-axis reduction
-    # get the shape of the output (gid domain) by removing the reduced axis
-    output_shape = list(self.shape)
-    output_shape.pop(reduce_axis)
-    # unpack 'gid' based strictly on the OUTPUT shape
-    gid_coords:list[str] = []
-    remaining = gid
-    for i in range(len(output_shape)):
-      below = prod(output_shape[i+1:])
-      if below == 1: 
-        gid_coords.append(remaining)
-      else:
-        gid_coords.append(f"({remaining} / {below})")
-        remaining = f"({remaining} % {below})"
-    # re-insert the loop variable 'k' at the reduced axis position
-    input_coords = list(gid_coords)
-    input_coords.insert(reduce_axis, "k")
-    # multiply by the INPUT strides to get the flat physical address
+    if not self.is_padded:
+      terms = [f"{c}" if s == 1 else f"({c}) * {s}" for c, s in zip(coords, self.strides) if s != 0]
+      return " + ".join(terms) if terms else "0", "true"
     terms: list[str] = []
-    for i, (coord, stride) in enumerate(zip(input_coords, self.strides)):
+    conditions: list[str] = []
+    valid_mask: tuple[tuple[int, int], ...] = self.padding_op.arg[1] # type: ignore
+    for i, (coord, stride, (pad_before, pad_after)) in enumerate(zip(coords, self.strides, valid_mask)):
+      # Build Mask
+      if pad_before > 0:
+        conditions.append(f"({coord} >= {pad_before})")
+      if pad_after > 0:
+        conditions.append(f"({coord} < {self.shape[i] - pad_after})")
+      # Build Index (Shift coordinate back to physical memory)
       if stride == 0: continue
-      if self.is_padded:
-        if (valid_mask := self.padding_op.arg[1][i][0]) > 0: coord = f"({coord} - {valid_mask})" # type: ignore
-      if stride == 1: terms.append(coord)
-      else: terms.append(f"{coord} * {stride}")
-    return " + ".join(terms) if terms else "0"
-  def reduce_index_expr_multi(self, reduce_axes:tuple[int, ...], gid:str="gid", k:str="k") -> str: # multi-axis reduction
+      shifted_coord = f"({coord} - {pad_before})" if pad_before > 0 else coord
+      if stride == 1: 
+        terms.append(shifted_coord)
+      else: 
+        terms.append(f"{shifted_coord} * {stride}")
+    index_math = " + ".join(terms) if terms else "0"
+    mask_math = " && ".join(conditions) if conditions else "true"
+    return index_math, mask_math
+  def reduce_index_expr_multi(self, reduce_axes:tuple[int, ...], gid:str="gid", k:str="k") -> tuple[str, str]: # multi-axis reduction
+    if is_scalar(self.uop, self.strides): return "0", "true"
     reduce_axes = tuple(sorted(reduce_axes))
     output_shape = [s for i, s in enumerate(self.shape) if i not in reduce_axes]
     reduce_shape = [self.shape[i] for i in reduce_axes]
@@ -178,69 +164,41 @@ class BufferRef:
         gid_idx += 1
     # Apply physical strides and padding guards
     terms: list[str] = []
+    mask_conditions: list[str] = []
     for i, (coord, stride) in enumerate(zip(input_coords, self.strides)):
+      # Handle Padding Mask Generation
+      if self.is_padded and self.padding_op.arg[1][i] != (0, 0): # type: ignore
+        pad_before, pad_after = self.padding_op.arg[1][i] # type: ignore
+        padded_size = self.shape[i]
+        # Valid bounds: pad_before <= coord < (padded_size - pad_after)
+        if pad_before > 0:
+          mask_conditions.append(f"({coord} >= {pad_before})")
+        if pad_after > 0:
+          mask_conditions.append(f"({coord} < {padded_size - pad_after})")
+        # Shift coordinate to map back to the unpadded physical tensor
+        coord = f"({coord} - {pad_before})"
       if stride == 0: continue
-      if self.is_padded:
-        if (valid_mask := self.padding_op.arg[1][i][0]) > 0: coord = f"({coord} - {valid_mask})" # type: ignore
       if stride == 1: 
         terms.append(coord)
       else: 
         terms.append(f"({coord}) * {stride}") 
-    return " + ".join(terms) if terms else "0"
+    index_math = " + ".join(terms) if terms else "0"
+    mask_math = " && ".join(mask_conditions) if mask_conditions else "true"
+    return index_math, mask_math
   def load_expr(self, buf_name:str, gid:str="gid") -> str:
-    idx_str:str = self.index_expr(gid)
-    if not self.is_padded: return f"{buf_name}[{idx_str}]"
+    index_math, mask_math = self.index_expr(gid)
+    if not self.is_padded and mask_math == "true": return f"{buf_name}[{index_math}]"
     from monograd.engine.codegen import cl_const
-    mask_str:str = self.mask_expr(gid)
-    val:ConstType = self.padding_op.arg[2] # type: ignore
-    pad_val_str:str = cl_const(val, self.uop.dtype)
-    return f"({mask_str} ? {buf_name}[{idx_str}] : {pad_val_str})"
-  def reduce_load_expr(self, reduce_axis:int, buf_name:str, gid:str="gid") -> str:
-    idx_str = self.reduce_index_expr(reduce_axis, gid)
-    if not self.is_padded: return f"{buf_name}[{idx_str}]"
+    assert self.padding_op is not None, f"we are padded but have no padding op?: {self}"
+    formatted_pad = cl_const(self.padding_op.arg[2], self.uop.dtype)
+    return f"({mask_math} ? {buf_name}[{index_math}] : {formatted_pad})"
+  def reduce_load_expr_multi(self, reduce_axes:tuple[int, ...], buf_name:str, gid:str="gid", k:str="k") -> str:
+    index_math, mask_math = self.reduce_index_expr_multi(reduce_axes, gid, k)
+    if not self.is_padded and mask_math == "true": return f"{buf_name}[{index_math}]"
     from monograd.engine.codegen import cl_const
-    mask_str:str = self.reduce_mask_expr(reduce_axis, gid)
-    val:ConstType = self.padding_op.arg[2] # type: ignore
-    pad_val_str:str = cl_const(val, self.uop.dtype)
-    return f"({mask_str} ? {buf_name}[{idx_str}] : {pad_val_str})"
-  def mask_expr(self, gid:str="gid") -> str:
-    if not self.is_padded: return "1"
-    coords:list[str] = []
-    remaining = gid
-    for i in range(len(self.shape)):
-      below = prod(self.shape[i+1:])
-      if below == 1: coords.append(remaining)
-      else:
-        coords.append(f"({remaining} / {below})")
-        remaining = f"({remaining} % {below})"
-    conditions:list[str] = []
-    valid_mask:tuple[tuple[int, ...]] = self.padding_op.arg[1] # type: ignore
-    for i, (coord, (start, end)) in enumerate(zip(coords, valid_mask)):
-      if start > 0 or end < self.shape[i]:
-        conditions.append(f"({coord} >= {start} && {coord} < {end})")
-    return " && ".join(conditions) if conditions else "1"
-  def reduce_mask_expr(self, reduce_axis:int, gid:str="gid") -> str:
-    if not self.is_padded: return "1"
-    output_shape = list(self.shape)
-    output_shape.pop(reduce_axis)
-    gid_coords:list[str] = []
-    remaining = gid
-    for i in range(len(output_shape)):
-      below = prod(output_shape[i+1:])
-      if below == 1: gid_coords.append(remaining)
-      else:
-        gid_coords.append(f"({remaining} / {below})")
-        remaining = f"({remaining} % {below})"
-    # Insert loop variable 'k'
-    input_coords = list(gid_coords)
-    input_coords.insert(reduce_axis, "k")
-    # Check boundaries against valid_mask
-    conditions:list[str] = []
-    valid_mask:tuple[tuple[int, ...]] = self.padding_op.arg[1] # type: ignore
-    for i, (coord, (start, end)) in enumerate(zip(input_coords, valid_mask)):
-      if start > 0 or end < self.shape[i]:
-        conditions.append(f"({coord} >= {start} && {coord} < {end})")
-    return " && ".join(conditions) if conditions else "1"
+    assert self.padding_op is not None, f"we are padded but have no padding op?: {self}"
+    formatted_pad = cl_const(self.padding_op.arg[2], self.uop.dtype)
+    return f"({mask_math} ? {buf_name}[{index_math}] : {formatted_pad})"
   @property
   def is_padded(self): return not self.padding_op is None
   def __repr__(self):
