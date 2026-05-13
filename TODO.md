@@ -22,19 +22,15 @@
 - flatten? (zero-copy preferably)
 - graph viz
 
-- memory coalescing in reduce_strided inner dim
-- multi-axis 1 pass reduction
-    - apply multi-axis fix
-    - review strides, am i dumb?
+- NOW
     - test reduce_index_expr_multi
-    - deprecate single axis reduction?
+    - add *GOOD* DEBUG prints when generating masks, it will be noisy af but i think needed
 
 # After codegen
 - monospec
 - stress test scheduler and understand it fully with tests
 - test contiguous & padding behaviours & _reduceop(axis_tuple) and axis_scalar & new scheduler
 - there is alot of repeted code in codegen, look into it
-- make DEBUG >= 1 print(source) into 1 line
 - document contextvars/envvars
 - re-read schedule.py
 - support np dtypes in to_dtype

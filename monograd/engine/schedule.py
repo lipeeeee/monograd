@@ -142,7 +142,10 @@ class BufferRef:
       if not shape: return []
       coords: list[str] = []
       remaining = flat_var
-      for i in range(len(shape)):
+      for i, dim_size in enumerate(shape):
+        if dim_size == 1:
+          coords.append("0")
+          continue
         below = prod(shape[i+1:])
         if below == 1: 
           coords.append(remaining)
