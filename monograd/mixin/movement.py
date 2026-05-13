@@ -48,7 +48,7 @@ class MovementMixin:
     assert (c := new_shape.count(-1)) <= 1, f"only one dimension can be inferred using -1, getting {new_shape}"
     if c:
       new_shape = tuple([-prod(self.shape) // prod(new_shape) if s == -1 else s for s in new_shape])
-    assert prod(self.shape) == prod(new_shape), "size mismatch, can't reshape ({self.shape}) -> ({new_shape})"
+    assert prod(self.shape) == prod(new_shape), f"size mismatch, can't reshape ({self.shape}) -> ({new_shape})"
     ret = self._mop(Ops.RESHAPE, new_shape)
     return self if ret.shape == self.shape else ret
   def permute(self, order:tuple[int, ...]) -> Self:
