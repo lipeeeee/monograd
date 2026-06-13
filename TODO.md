@@ -36,6 +36,7 @@
 - support np dtypes in to_dtype
 - !look for cache optims!
 
+good doc: https://cnugteren.github.io/tutorial/pages/page1.html
 
 # Debug levels
 - DEBUG >= 1 — High level execution flow

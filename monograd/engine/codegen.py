@@ -225,6 +225,11 @@ def _codegen_copy(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
   source:str = f"""  int gid = get_global_id(0);
   if (gid >= n) return;
-  out[gid] = {task.inputs[0].load_expr('in0', 'gid')};
-  """
+  out[gid] = {task.inputs[0].load_expr('in0', 'gid')};"""
   return render_kernel(task, source, global_size=(n,))
+def _codegen_matmul(task:KernelTask) -> CompiledKernel:
+  # 0. should i name this codegen_gemm or matmul?
+  # 1. need to query optimal params (tiled & stuff)
+  # 2. have a default GEMM template, apply any and all params
+
+  ...

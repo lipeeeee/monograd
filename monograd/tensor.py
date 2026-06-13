@@ -205,6 +205,10 @@ if __name__ == "__main__":
   out = e.sum().uop
   d = rewrite_graph(out)
 
+  a = Tensor([[1.0, 1.0], [2.0, 2.0]], device="gpu", dtype=dtypes.float32).pad(((1, 1), (1, 1)), value=1.0)
+  b = a * 3
+  d = rewrite_graph(b.uop)
+
   print("=== UOP GRAPH ===")
   pprint_graph(d)
   print("\n=== SCHEDULED KERNELS ===")
