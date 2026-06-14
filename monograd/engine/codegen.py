@@ -227,9 +227,116 @@ def _codegen_copy(task:KernelTask) -> CompiledKernel:
   if (gid >= n) return;
   out[gid] = {task.inputs[0].load_expr('in0', 'gid')};"""
   return render_kernel(task, source, global_size=(n,))
-def _codegen_matmul(task:KernelTask) -> CompiledKernel:
-  # 0. should i name this codegen_gemm or matmul?
-  # 1. need to query optimal params (tiled & stuff)
-  # 2. have a default GEMM template, apply any and all params
+def _codegen_blas(task: KernelTask,
+                  TSM: int = 128, 
+                  TSN: int = 128, 
+                  TSK: int = 16, 
+                  WPTM: int = 8, 
+                  WPTN: int = 8) -> CompiledKernel:
+  A_ref, B_ref = task.inputs[0], task.inputs[1]
+  M, K = A_ref.shape[-2], A_ref.shape[-1]
+  _, N = B_ref.shape[-2], B_ref.shape[-1]
+  B_batch = prod(task.output_shape[:-2]) if len(task.output_shape) > 2 else 1
+    
+  dtype = cl_type(task.output_dtype)
+  zero = cl_const(0.0, task.output_dtype)
+  fma_expr = CL_OP[Ops.MULACC]('Areg', 'Breg[wn]', 'acc[wm][wn]')
 
-  ...
+  # Hardware Tiling Heuristics 
+  RTSM, RTSN = TSM // WPTM, TSN // WPTN
+  assert (TSK * TSM) % (RTSM * RTSN) == 0, "A-tile fetch loop not perfectly divisible by thread count"
+  assert (TSK * TSN) % (RTSM * RTSN) == 0, "B-tile fetch loop not perfectly divisible by thread count"
+  LPTA = (TSK * TSM) // (RTSM * RTSN)
+  LPTB = (TSK * TSN) // (RTSM * RTSN)
+
+  fetch_A = A_ref.load_expr("in0", gid=f"(batch * {M * K} + global_rowA * {K} + global_colA)")
+  fetch_B = B_ref.load_expr("in1", gid=f"(batch * {K * N} + global_rowB * {N} + global_colB)")
+
+  source = f""" const int tidn = get_local_id(0);
+  const int tidm = get_local_id(1);
+  const int offsetN = {TSN} * get_group_id(0);
+  const int offsetM = {TSM} * get_group_id(1);
+  const int batch = get_global_id(2);
+
+  __local {dtype} Asub[{TSM}][{TSK} + 1]; 
+  __local {dtype} Bsub[{TSK}][{TSN}];
+
+  {dtype} Areg;
+  {dtype} Breg[{WPTN}];
+  {dtype} acc[{WPTM}][{WPTN}];
+
+  #pragma unroll
+  for (int wm = 0; wm < {WPTM}; wm++) {{
+    #pragma unroll
+    for (int wn = 0; wn < {WPTN}; wn++) {{
+      acc[wm][wn] = {zero};
+    }}
+  }}
+
+  int local_tid = tidm * {RTSN} + tidn; 
+  int num_threads = {RTSM * RTSN};
+  int numTiles = ({K} + {TSK} - 1) / {TSK};
+  
+  for (int t = 0; t < numTiles; t++) {{
+    int TSK_t = {TSK} * t;
+
+    #pragma unroll
+    for (int la = 0; la < {LPTA}; la++) {{
+      int id = la * num_threads + local_tid;
+      int colA = id % {TSK};
+      int rowA = id / {TSK};
+      int global_rowA = offsetM + rowA;
+      int global_colA = TSK_t + colA;
+        
+      Asub[rowA][colA] = (global_rowA < {M} && global_colA < {K}) ? {fetch_A} : {zero};
+    }}
+
+    #pragma unroll
+    for (int lb = 0; lb < {LPTB}; lb++) {{
+      int id = lb * num_threads + local_tid;
+      int colB = id % {TSN};
+      int rowB = id / {TSN};
+      int global_rowB = TSK_t + rowB;
+      int global_colB = offsetN + colB;
+
+      Bsub[rowB][colB] = (global_rowB < {K} && global_colB < {N}) ? {fetch_B} : {zero};
+    }}
+      
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for (int k = 0; k < {TSK}; k++) {{
+      #pragma unroll
+      for (int wn = 0; wn < {WPTN}; wn++) {{
+        Breg[wn] = Bsub[k][tidn + wn * {RTSN}];
+      }}
+
+      #pragma unroll
+      for (int wm = 0; wm < {WPTM}; wm++) {{
+        Areg = Asub[tidm + wm * {RTSM}][k]; 
+        #pragma unroll
+        for (int wn = 0; wn < {WPTN}; wn++) {{
+          acc[wm][wn] = {fma_expr};
+        }}
+      }}
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }}
+
+  #pragma unroll
+  for (int wm = 0; wm < {WPTM}; wm++) {{
+    int globalRow = offsetM + tidm + wm * {RTSM};
+    #pragma unroll
+    for (int wn = 0; wn < {WPTN}; wn++) {{
+      int globalCol = offsetN + tidn + wn * {RTSN};
+      if (globalRow < {M} && globalCol < {N}) {{
+        out[batch * ({M} * {N}) + globalRow * {N} + globalCol] = acc[wm][wn]; 
+      }}
+    }}
+  }}"""
+  local_size = (RTSN, RTSM, 1)
+  global_size = (
+    ((N + TSN - 1) // TSN) * RTSN, 
+    ((M + TSM - 1) // TSM) * RTSM,
+    B_batch
+  )
+  return render_kernel(task, source, global_size=global_size, local_size=local_size)
