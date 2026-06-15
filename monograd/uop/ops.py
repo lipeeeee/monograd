@@ -36,7 +36,7 @@ class UOp(metaclass=UOpMetaClass):
     if self.op is Ops.CAST: return self.arg
     if self.op is Ops.COPY: return self.arg
     if self.op in GroupOp.Movement: return self.src[0].device
-    # if self.op is Ops.MATMUL: return self.arg
+    if self.op is Ops.MATMUL: return self.arg
     if self.op is Ops.CONTIGUOUS: return self.src[0].device # uses _unop
     if self.op in GroupOp.ALU: return self.arg
     if self.op in GroupOp.Reduce: return self.src[0].device
