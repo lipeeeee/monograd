@@ -106,9 +106,11 @@ Fix: either use `__hash__ = object.__hash__` everywhere (identity semantics) and
 - `Adam` is literally `class Adam(Optimizer): pass`.
 - `examples/mnist.py` uses `loss.backward()`, `logits.data`, `tensor.data` — none exist on the new `Tensor`.
 
-### 5. BLAS codegen bypasses `BufferRef` (silent wrong results)
+### 5. BLAS codegen is not wired into the public codegen path (fatal for matmul)
 
-`_codegen_blas` computes A/B fetch indices with hardcoded row-major arithmetic (`global_rowA * K + global_colA`) instead of using `BufferRef.load_expr`. If either input matrix was permuted or transposed before the matmul, the kernel reads wrong memory locations and produces wrong results silently. This is a real issue since `matmul` is commonly preceded by a transpose (e.g., `(x @ w.T)`).
+`run_scheduler()` can emit `TaskKind.BLAS` for `MATMUL`, and `_codegen_blas()` exists, but `codegen()` never dispatches `TaskKind.BLAS`. A `Tensor.matmul()` graph currently reaches the final `RuntimeError` in `codegen()` instead of generating the tiled GEMM kernel.
+
+`_codegen_blas()` does use `BufferRef.load_expr()` for A/B fetches, so the previous claim that BLAS completely bypasses `BufferRef` was too strong. The remaining correctness work is to wire it into `codegen()` and then verify transposed, permuted, broadcasted, and padded inputs against the `BufferRef` indexing assumptions.
 
 ### 6. Float-type-specific C literals used for all dtypes
 
@@ -150,9 +152,9 @@ Fix: cache compiled `cl.Program` objects keyed by source string hash. The UOp si
 
 `Buffer.allocate()` makes a fresh `cl.Buffer` allocation every time. The TODO correctly identifies this causes VRAM fragmentation and overhead. For training loops that allocate/free the same shapes repeatedly, a simple pool keyed by `(size, device)` reclaims most of this overhead.
 
-### 13. `dtypes.bool` uses C type `"char"`
+### 13. `dtypes.bool` storage semantics need an explicit decision
 
-`dtypes.bool = DType(0, 1, "char", '?')`. The C type name emitted is `"char"` (OpenCL `char`), which is a signed 8-bit integer, not a boolean. OpenCL has `bool` as a keyword — using `char` for boolean semantics works in practice but is semantically wrong and could produce unexpected results with relational ops that return `int`.
+`dtypes.bool = DType(0, 1, "char", '?')`. The C type name emitted is `"char"` (OpenCL `char`), which is a signed 8-bit integer, not a logical `bool`. That may still be the right storage representation, because OpenCL `bool` is awkward as a buffer element type. The issue is not necessarily that this must become OpenCL `bool`; the issue is that boolean storage, comparison results, and truth semantics need to be defined deliberately.
 
 ---
 
@@ -200,7 +202,7 @@ BLOCKING (nothing works without these)
   4. Implement Adam
 
 HIGH (correctness issues)
-  5. Fix BLAS codegen to use BufferRef for transposed inputs
+  5. Dispatch TaskKind.BLAS in codegen and verify BufferRef indexing for transformed inputs
   6. Fix LOAD UOp hash/eq contract
   7. Fix float-type-specific C literals (use cl_const everywhere)
 
@@ -213,12 +215,42 @@ LOW (cleanup)
   11. Delete dead code (im2col utilities, old debug system)
   12. Implement SHRINK for tensor slicing
   13. Implement WHERE / _ternop for conditional ops
-  14. Fix dtypes.bool C type from "char" to "bool"
+  14. Decide and document boolean tensor storage semantics
   15. Document arg encoding per op in UOp docstring
   16. Convert scheduler _pull recursion to explicit stack
 ```
 
 ---
+
+---
+
+## Second-Pass Observations
+
+These notes are from a separate systems/deep-learning review of the current source. The proposed README below is left unchanged, but it should be treated as an aspirational draft, not an accurate current README.
+
+### README draft status
+
+The README draft advertises features that do not exist yet: `.realize()`, `.numpy()`, reverse-mode autograd, kernel caching, usable `nn` layers, Adam, Conv2d, MaxPool2d, and a runnable MNIST example. It is useful as a product direction, but publishing it as-is would misrepresent the project state. A current README should explicitly say the project is experimental and that the runtime/autograd path is incomplete.
+
+### Runtime boundary should be explicit
+
+The cleanest next architectural split is not another high-level abstraction. Add a small runtime layer that owns OpenCL program compilation, kernel caching, argument binding, output allocation, and kernel enqueue. Keep `device.py` focused on raw context/queue/buffer operations, and keep `codegen.py` focused on source generation.
+
+### Autograd should live at Tensor level first
+
+`UOp` is compiler IR. `requires_grad` lives on `Tensor`. If backward walks only `UOp.src`, it loses Tensor-level metadata and user leaf identity. The first autograd implementation should store Tensor parents on each output Tensor, keep gradient rules close to Tensor op construction, and let gradients themselves be lazy Tensor graphs.
+
+### `BufferRef` is really a view tracker
+
+`BufferRef` currently mixes scheduling, shape/stride replay, padding masks, and OpenCL expression rendering. This is the right concept, but the wrong home. It should eventually become a small view/shape-tracker object used by scheduler and codegen, while OpenCL string rendering stays in codegen.
+
+### Keep the first working model smaller
+
+Do not aim for the CNN MNIST example first. The shortest path to a useful framework is elementwise ops, reductions, matmul, `.numpy()`, basic autograd, `Linear`, and `SGD`, then a tiny MLP. Conv2d and MaxPool2d require either slicing/im2col support or direct convolution kernels and will distract from the core compiler/runtime loop.
+
+### Be careful with OpenCL bool storage
+
+The earlier recommendation to change `dtypes.bool` from `char` to OpenCL `bool` is not obviously correct. OpenCL `bool` is awkward as a buffer element type. Keeping boolean tensors as byte-backed `char`/`uchar` may be the more practical representation, as long as comparison ops and truth semantics are explicit.
 
 ---
 
