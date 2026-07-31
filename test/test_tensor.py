@@ -527,6 +527,11 @@ class TestReshape(unittest.TestCase):
     r = self.t.reshape((6,))
     self.assertIs(r.dtype, self.t.dtype)
 
+  def test_reshape_materializes_permuted_input(self):
+    r = self.t.permute((1, 0)).reshape((6,))
+    self.assertIs(r.uop.op, Ops.RESHAPE)
+    self.assertIs(r.uop.src[0].op, Ops.CONTIGUOUS)
+
 
 # **** movementmixin — expand ****
 class TestExpand(unittest.TestCase):
@@ -592,6 +597,11 @@ class TestPermute(unittest.TestCase):
     t = Tensor(np.zeros((3, 4), dtype=np.float32))
     p = t.permute((0, 1))
     self.assertEqual(p.shape, (3, 4))
+
+  def test_permute_materializes_expanded_input(self):
+    t = Tensor(np.zeros((1, 4), dtype=np.float32)).expand((3, 4))
+    p = t.permute((1, 0))
+    self.assertIs(p.uop.src[0].op, Ops.CONTIGUOUS)
 
 
 # **** movementmixin — transpose ****

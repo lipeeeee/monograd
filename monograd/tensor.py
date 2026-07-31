@@ -122,7 +122,7 @@ class Tensor(OpMixin):
     cur = self.uop
     while cur.op in GroupOp.Movement or cur.op in {Ops.PAD, Ops.CONTIGUOUS}:
       if cur.op is Ops.CONTIGUOUS: return True
-      if cur.op is Ops.PAD: return False
+      if cur.op in {Ops.EXPAND, Ops.PERMUTE, Ops.PAD, Ops.SHRINK}: return False
       cur = cur.src[0]
     return True
   def contiguous(self) -> Tensor:

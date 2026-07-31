@@ -16,7 +16,7 @@ from monograd.utils import DEBUG
 _local_size_tmp = 256
 
 C_KERNEL_TEMPLATE = """{pragmas}
-__kernel void {name}({args}, __global {out_dtype}* out{extra_args}, const int n) {{
+__kernel void {name}({args}__global {out_dtype}* out{extra_args}, const int n) {{
 {body}
 }}"""
 
@@ -37,6 +37,7 @@ CL_OP: dict[Ops, Callable] = {
   # binary
   Ops.ADD:    lambda a, b:    f"({a} + {b})",
   Ops.MUL:    lambda a, b:    f"({a} * {b})",
+  Ops.MAX:    lambda a, b:    f"max({a}, {b})",
   Ops.MOD:    lambda a, b:    f"({a} % {b})",
   Ops.POW:    lambda a, b:    f"pow({a}, {b})",
   Ops.XOR:    lambda a, b:    f"({a} ^ {b})",
@@ -44,7 +45,6 @@ CL_OP: dict[Ops, Callable] = {
   Ops.AND:    lambda a, b:    f"({a} & {b})",
   # unary
   Ops.RECIP:  lambda a:       f"(1.0f / {a})",
-  Ops.RELU:   lambda a:       f"max({a}, 0)",
   Ops.SIN:    lambda a:       f"sin({a})",
   Ops.SQRT:   lambda a:       f"sqrt({a})",
   Ops.EXP:    lambda a:       f"exp2({a} * 1.4426950408889634f)",   # exp(x) = exp2(x / ln(2)) = exp2(x * log2(e))
@@ -73,7 +73,13 @@ def cl_const(val:ConstType, dtype:DType) -> str: # NOTE: Cache??
   return f"({cl_type(dtype)})({int(val)})"
 def render_pragmas(task:KernelTask) -> str:
   lines:list[str] = []
-  all_dtypes:set[DType] = {task.output_dtype} | {ref.uop.dtype for ref in task.inputs}
+  all_dtypes:set[DType] = {task.output_dtype} | {ref.uop.dtype for ref in task.inputs} | {op.dtype for op in task.ops}
+  seen:set[int] = set()
+  stack = [src for op in task.ops for src in op.src]
+  while stack:
+    uop = stack.pop()
+    if id(uop) in seen: continue
+    seen.add(id(uop)); all_dtypes.add(uop.dtype); stack.extend(uop.src)
   if dtypes.float16 in all_dtypes: lines.append("#pragma OPENCL EXTENSION cl_khr_fp16 : enable")
   if dtypes.float64 in all_dtypes: lines.append("#pragma OPENCL EXTENSION cl_khr_fp64 : enable")
   return "\n".join(lines) + ("\n" if len(lines) > 0 else "")
@@ -92,11 +98,15 @@ def render_op(uop:UOp, src_exprs:list[str]) -> str:
   if uop.op is Ops.CAST:
     assert len(src_exprs) == 1, "cast received more than 1 arg when rendering"
     return f"({cl_type(uop.dtype)}){src_exprs[0]}"
+  if uop.op is Ops.RELU:
+    assert len(src_exprs) == 1, "relu received more than 1 arg when rendering"
+    return f"max({src_exprs[0]}, {cl_const(0, uop.dtype)})"
   assert uop.op in CL_OP, f"unhandled op in render_op: {uop.op}"
   return CL_OP[uop.op](*src_exprs)
-def render_kernel(task:KernelTask, body:str, global_size:tuple, local_size:tuple|None=None, extra_args:str="") -> CompiledKernel:
-  name = kernel_name(task)
+def render_kernel(task:KernelTask, body:str, global_size:tuple, local_size:tuple|None=None, extra_args:str="", name_suffix:str="") -> CompiledKernel:
+  name = kernel_name(task) + name_suffix
   args = ", ".join(f"__global const {cl_type(b.uop.dtype)}* in{i}" for i, b in enumerate(task.inputs))
+  if args: args += ", "
   source = C_KERNEL_TEMPLATE.format(
       pragmas=render_pragmas(task),
       name=name,
@@ -134,7 +144,7 @@ def codegen(task:KernelTask) -> CompiledKernel:
     if any(primary_strides[a] == 1 for a in reduce_axes): return _codegen_reduce_strided_inner(task, _local_size_tmp)
     else: return _codegen_reduce_strided_outer(task)
   if task.kind is TaskKind.COPY: return _codegen_copy(task)
-  if task.kind is TaskKind.BLAS: return _codegen_blas(task)
+  if task.kind is TaskKind.BLAS: return _codegen_matmul(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
@@ -228,119 +238,138 @@ def _codegen_copy(task:KernelTask) -> CompiledKernel:
   if (gid >= n) return;
   out[gid] = {task.inputs[0].load_expr('in0', 'gid')};"""
   return render_kernel(task, source, global_size=(n,))
-def _codegen_blas(task: KernelTask,
-                  TSM: int = 128, 
-                  TSN: int = 128, 
-                  TSK: int = 16, 
-                  WPTM: int = 8, 
-                  WPTN: int = 8) -> CompiledKernel:
-  assert TSM % WPTM == 0, f"TSM ({TSM}) must be a multiple of WPTM ({WPTM})"
-  assert TSN % WPTN == 0, f"TSN ({TSN}) must be a multiple of WPTN ({WPTN})"
-  A_ref, B_ref = task.inputs[0], task.inputs[1]
-  M, K = A_ref.shape[-2], A_ref.shape[-1]
-  _, N = B_ref.shape[-2], B_ref.shape[-1]
-  B_batch = prod(task.output_shape[:-2]) if len(task.output_shape) > 2 else 1
-    
-  dtype = cl_type(task.output_dtype)
-  zero = cl_const(0.0, task.output_dtype)
-  fma_expr = CL_OP[Ops.MULACC]('Areg', 'Breg[wn]', 'acc[wm][wn]')
-
-  # Hardware Tiling Heuristics 
-  RTSM, RTSN = TSM // WPTM, TSN // WPTN
-  assert (TSK * TSM) % (RTSM * RTSN) == 0, "A-tile fetch loop not perfectly divisible by thread count"
-  assert (TSK * TSN) % (RTSM * RTSN) == 0, "B-tile fetch loop not perfectly divisible by thread count"
-  assert (RTSM * RTSN) <= 1024, f"Workgroup size {RTSM * RTSN} exceeds OpenCL 1024 hardware limit"
-  LPTA = (TSK * TSM) // (RTSM * RTSN)
-  LPTB = (TSK * TSN) // (RTSM * RTSN)
-
-  fetch_A = A_ref.load_expr("in0", gid=f"(batch * {M * K} + global_rowA * {K} + global_colA)")
-  fetch_B = B_ref.load_expr("in1", gid=f"(batch * {K * N} + global_rowB * {N} + global_colB)")
-
-  source = f""" const int tidn = get_local_id(0);
-  const int tidm = get_local_id(1);
-  const int offsetN = {TSN} * get_group_id(0);
-  const int offsetM = {TSM} * get_group_id(1);
-  const int batch = get_global_id(2);
-
-  __local {dtype} Asub[{TSM}][{TSK} + 1]; 
-  __local {dtype} Bsub[{TSK}][{TSN}];
-
-  {dtype} Areg;
-  {dtype} Breg[{WPTN}];
-  {dtype} acc[{WPTM}][{WPTN}];
-
+def _unpack_matmul(task:KernelTask) -> tuple[UOp, UOp, int, int, int]:
+  assert task.output_uop.op is Ops.MATMUL, f"MATMUL codegen received {task.output_uop.op}"
+  assert all(op.op in GroupOp.ALU for op in task.ops[:-1]), f"invalid MATMUL prologue: {task.ops[:-1]}"
+  left, right = task.output_uop.src
+  assert len(left.shape) == len(right.shape) == 2, "MATMUL codegen currently supports only 2D inputs"
+  assert task.output_dtype is not dtypes.bool, "boolean MATMUL is unsupported"
+  assert left.dtype is task.output_dtype and right.dtype is task.output_dtype, "MATMUL operands must match its output dtype"
+  m, k = left.shape
+  b_k, n = right.shape
+  assert k == b_k, f"MATMUL shape mismatch: {left.shape} x {right.shape}"
+  assert task.output_shape == (m, n), f"MATMUL output mismatch: expected {(m, n)}, got {task.output_shape}"
+  return left, right, m, n, k
+def _matmul_renderer(task:KernelTask) -> Callable[[UOp, str], str]:
+  group_ids = {id(op) for op in task.ops}
+  input_names = {id(ref): f"in{i}" for i, ref in enumerate(task.inputs)}
+  def render(uop:UOp, index:str) -> str:
+    if uop.op is Ops.CONST: return cl_const(uop.arg[0], uop.dtype)
+    if uop.op in GroupOp.Movement:
+      ref = BufferRef.from_uop(uop)
+      if id(ref.uop) not in group_ids and ref.uop.op is not Ops.CONST:
+        assert id(ref) in input_names, f"missing MATMUL input for {uop}"
+        value = ref.load_expr(input_names[id(ref)], index)
+      else:
+        mapped_index, mask = ref.index_expr(index)
+        value = render(ref.uop, mapped_index)
+        if mask != "true":
+          assert ref.padding_op is not None, f"masked MATMUL input has no padding op: {ref}"
+          value = f"({mask} ? {value} : {cl_const(ref.padding_op.arg[2], uop.dtype)})"
+      return f"({cl_type(uop.dtype)})({value})"
+    if id(uop) not in group_ids:
+      ref = BufferRef.from_uop(uop)
+      assert id(ref) in input_names, f"missing MATMUL input for {uop}"
+      return f"({cl_type(uop.dtype)})({ref.load_expr(input_names[id(ref)], index)})"
+    assert uop.op in GroupOp.ALU, f"unsupported fused MATMUL op: {uop.op}"
+    return f"({cl_type(uop.dtype)})({render_op(uop, [render(src, index) for src in uop.src])})"
+  return render
+def _codegen_matmul(task:KernelTask) -> CompiledKernel:
+  if task.output_dtype in {dtypes.float16, dtypes.float32}: return _codegen_matmul_tiled(task)
+  return _codegen_matmul_naive(task)
+def _codegen_matmul_naive(task:KernelTask) -> CompiledKernel:
+  left, right, m, cols, depth = _unpack_matmul(task)
+  render = _matmul_renderer(task)
+  dtype, zero = cl_type(task.output_dtype), cl_const(0, task.output_dtype)
+  load_a = render(left, f"(row * {depth} + k)")
+  load_b = render(right, f"(k * {cols} + col)")
+  update = CL_OP[Ops.MULACC](load_a, load_b, "acc") if dtypes.is_float(task.output_dtype) else f"(acc + ({load_a} * {load_b}))"
+  source = f"""  int gid = get_global_id(0);
+  if (gid >= n) return;
+  int row = gid / {cols};
+  int col = gid % {cols};
+  {dtype} acc = {zero};
+  for (int k = 0; k < {depth}; k++) acc = {update};
+  out[gid] = acc;"""
+  return render_kernel(task, source, global_size=(m * cols,), name_suffix="_naive")
+def _codegen_matmul_tiled(task:KernelTask, tile_m:int=128, tile_n:int=128, tile_k:int=16,
+                          work_m:int=8, work_n:int=8) -> CompiledKernel:
+  assert dtypes.is_float(task.output_dtype), "tiled MATMUL requires a floating-point dtype"
+  assert min(tile_m, tile_n, tile_k, work_m, work_n) > 0, "MATMUL tuning parameters must be positive"
+  assert tile_m % work_m == 0, f"tile_m ({tile_m}) must be divisible by work_m ({work_m})"
+  assert tile_n % work_n == 0, f"tile_n ({tile_n}) must be divisible by work_n ({work_n})"
+  left, right, m, n, k = _unpack_matmul(task)
+  render = _matmul_renderer(task)
+  threads_m, threads_n = tile_m // work_m, tile_n // work_n
+  thread_count = threads_m * threads_n
+  assert tile_k * tile_m % thread_count == 0, "A tile cannot be evenly loaded by the workgroup"
+  assert tile_k * tile_n % thread_count == 0, "B tile cannot be evenly loaded by the workgroup"
+  assert thread_count <= 1024, f"workgroup size {thread_count} exceeds the OpenCL limit"
+  loads_a, loads_b = tile_k * tile_m // thread_count, tile_k * tile_n // thread_count
+  dtype, zero = cl_type(task.output_dtype), cl_const(0, task.output_dtype)
+  load_a = render(left, f"(global_row_a * {k} + global_col_a)")
+  load_b = render(right, f"(global_row_b * {n} + global_col_b)")
+  fma = CL_OP[Ops.MULACC]("a_value", "b_values[wn]", "acc[wm][wn]")
+  # The extra A column breaks bank-aligned row strides in local memory.
+  source = f"""  const int thread_n = get_local_id(0);
+  const int thread_m = get_local_id(1);
+  const int offset_n = {tile_n} * get_group_id(0);
+  const int offset_m = {tile_m} * get_group_id(1);
+  const int thread_id = thread_m * {threads_n} + thread_n;
+  __local {dtype} tile_a[{tile_m}][{tile_k + 1}];
+  __local {dtype} tile_b[{tile_k}][{tile_n}];
+  {dtype} a_value;
+  {dtype} b_values[{work_n}];
+  {dtype} acc[{work_m}][{work_n}];
   #pragma unroll
-  for (int wm = 0; wm < {WPTM}; wm++) {{
+  for (int wm = 0; wm < {work_m}; wm++) {{
     #pragma unroll
-    for (int wn = 0; wn < {WPTN}; wn++) {{
-      acc[wm][wn] = {zero};
-    }}
+    for (int wn = 0; wn < {work_n}; wn++) acc[wm][wn] = {zero};
   }}
-
-  int local_tid = tidm * {RTSN} + tidn; 
-  int num_threads = {RTSM * RTSN};
-  int numTiles = ({K} + {TSK} - 1) / {TSK};
-  
-  for (int t = 0; t < numTiles; t++) {{
-    int TSK_t = {TSK} * t;
-
+  const int tile_count = ({k} + {tile_k - 1}) / {tile_k};
+  for (int tile = 0; tile < tile_count; tile++) {{
+    const int tile_offset = {tile_k} * tile;
     #pragma unroll
-    for (int la = 0; la < {LPTA}; la++) {{
-      int id = la * num_threads + local_tid;
-      int colA = id % {TSK};
-      int rowA = id / {TSK};
-      int global_rowA = offsetM + rowA;
-      int global_colA = TSK_t + colA;
-        
-      Asub[rowA][colA] = (global_rowA < {M} && global_colA < {K}) ? {fetch_A} : {zero};
+    for (int load = 0; load < {loads_a}; load++) {{
+      const int load_id = load * {thread_count} + thread_id;
+      const int row_a = load_id / {tile_k};
+      const int col_a = load_id % {tile_k};
+      const int global_row_a = offset_m + row_a;
+      const int global_col_a = tile_offset + col_a;
+      tile_a[row_a][col_a] = global_row_a < {m} && global_col_a < {k} ? {load_a} : {zero};
     }}
-
     #pragma unroll
-    for (int lb = 0; lb < {LPTB}; lb++) {{
-      int id = lb * num_threads + local_tid;
-      int colB = id % {TSN};
-      int rowB = id / {TSN};
-      int global_rowB = TSK_t + rowB;
-      int global_colB = offsetN + colB;
-
-      Bsub[rowB][colB] = (global_rowB < {K} && global_colB < {N}) ? {fetch_B} : {zero};
+    for (int load = 0; load < {loads_b}; load++) {{
+      const int load_id = load * {thread_count} + thread_id;
+      const int row_b = load_id / {tile_n};
+      const int col_b = load_id % {tile_n};
+      const int global_row_b = tile_offset + row_b;
+      const int global_col_b = offset_n + col_b;
+      tile_b[row_b][col_b] = global_row_b < {k} && global_col_b < {n} ? {load_b} : {zero};
     }}
-      
     barrier(CLK_LOCAL_MEM_FENCE);
-
-    for (int k = 0; k < {TSK}; k++) {{
+    for (int kk = 0; kk < {tile_k}; kk++) {{
       #pragma unroll
-      for (int wn = 0; wn < {WPTN}; wn++) {{
-        Breg[wn] = Bsub[k][tidn + wn * {RTSN}];
-      }}
-
+      for (int wn = 0; wn < {work_n}; wn++) b_values[wn] = tile_b[kk][thread_n + wn * {threads_n}];
       #pragma unroll
-      for (int wm = 0; wm < {WPTM}; wm++) {{
-        Areg = Asub[tidm + wm * {RTSM}][k]; 
+      for (int wm = 0; wm < {work_m}; wm++) {{
+        a_value = tile_a[thread_m + wm * {threads_m}][kk];
         #pragma unroll
-        for (int wn = 0; wn < {WPTN}; wn++) {{
-          acc[wm][wn] = {fma_expr};
-        }}
+        for (int wn = 0; wn < {work_n}; wn++) acc[wm][wn] = {fma};
       }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
   }}
-
   #pragma unroll
-  for (int wm = 0; wm < {WPTM}; wm++) {{
-    int globalRow = offsetM + tidm + wm * {RTSM};
+  for (int wm = 0; wm < {work_m}; wm++) {{
+    const int row = offset_m + thread_m + wm * {threads_m};
     #pragma unroll
-    for (int wn = 0; wn < {WPTN}; wn++) {{
-      int globalCol = offsetN + tidn + wn * {RTSN};
-      if (globalRow < {M} && globalCol < {N}) {{
-        out[batch * ({M} * {N}) + globalRow * {N} + globalCol] = acc[wm][wn]; 
-      }}
+    for (int wn = 0; wn < {work_n}; wn++) {{
+      const int col = offset_n + thread_n + wn * {threads_n};
+      if (row < {m} && col < {n}) out[row * {n} + col] = acc[wm][wn];
     }}
   }}"""
-  local_size = (RTSN, RTSM, 1)
-  global_size = (
-    ((N + TSN - 1) // TSN) * RTSN, 
-    ((M + TSM - 1) // TSM) * RTSM,
-    B_batch
-  )
-  return render_kernel(task, source, global_size=global_size, local_size=local_size)
+  local_size = (threads_n, threads_m, 1)
+  global_size = (((n + tile_n - 1) // tile_n) * threads_n, ((m + tile_m - 1) // tile_m) * threads_m, 1)
+  suffix = f"_tiled_{tile_m}x{tile_n}x{tile_k}_{work_m}x{work_n}"
+  return render_kernel(task, source, global_size, local_size, name_suffix=suffix)

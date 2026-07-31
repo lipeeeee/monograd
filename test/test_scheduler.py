@@ -23,25 +23,16 @@ def load(shape, dtype=F32, device=CPU) -> UOp:
   u = UOp(Ops.LOAD, dtype, (), (shape, device))
   u.assign_buffer(int(np.prod(shape)))
   return u
-
-def const(val, dtype=F32, device=CPU) -> UOp:
-  return UOp(Ops.CONST, dtype, (), (val, device))
-
-def reshape(src, shape) -> UOp:
-  return UOp(Ops.RESHAPE, src.dtype, (src,), shape)
-
-def expand(src, shape) -> UOp:
-  return UOp(Ops.EXPAND, src.dtype, (src,), shape)
-
-def permute(src, order) -> UOp:
-  return UOp(Ops.PERMUTE, src.dtype, (src,), order)
-
-def add(a, b) -> UOp:    return UOp(Ops.ADD,   a.dtype, (a, b), CPU)
-def mul(a, b) -> UOp:    return UOp(Ops.MUL,   a.dtype, (a, b), CPU)
-def relu(a) -> UOp:      return UOp(Ops.RELU,  a.dtype, (a,),   CPU)
-def exp(a) -> UOp:       return UOp(Ops.EXP,   a.dtype, (a,),   CPU)
-def log(a) -> UOp:       return UOp(Ops.LOG,   a.dtype, (a,),   CPU)
-def sqrt(a) -> UOp:      return UOp(Ops.SQRT,  a.dtype, (a,),   CPU)
+def const(val, dtype=F32, device=CPU) -> UOp: return UOp(Ops.CONST, dtype, (), (val, device))
+def reshape(src, shape) -> UOp: return UOp(Ops.RESHAPE, src.dtype, (src,), shape)
+def expand(src, shape) -> UOp: return UOp(Ops.EXPAND, src.dtype, (src,), shape)
+def permute(src, order) -> UOp: return UOp(Ops.PERMUTE, src.dtype, (src,), order)
+def add(a, b) -> UOp: return UOp(Ops.ADD,   a.dtype, (a, b), CPU)
+def mul(a, b) -> UOp: return UOp(Ops.MUL,   a.dtype, (a, b), CPU)
+def relu(a) -> UOp: return UOp(Ops.RELU,  a.dtype, (a,),   CPU)
+def exp(a) -> UOp: return UOp(Ops.EXP,   a.dtype, (a,),   CPU)
+def log(a) -> UOp: return UOp(Ops.LOG,   a.dtype, (a,),   CPU)
+def sqrt(a) -> UOp: return UOp(Ops.SQRT,  a.dtype, (a,),   CPU)
 def cast(a, dtype) -> UOp: return UOp(Ops.CAST, dtype, (a,),    CPU)
 
 # **** decomposed ops ****
@@ -387,6 +378,13 @@ class TestIndexExpr(unittest.TestCase):
     ref  = BufferRef.from_uop(p)
     self.assertEqual(ref.strides, (1, 3))
 
+  def test_composed_index_expression_preserves_precedence(self):
+    a = load((2, 3))
+    view_expr, _ = BufferRef.from_uop(permute(a, (1, 0))).index_expr("gid")
+    base_expr, _ = BufferRef.from_uop(a).index_expr(view_expr)
+    expected = [0, 3, 1, 4, 2, 5]
+    for gid, index in enumerate(expected): self.assertEqual(eval_index(base_expr, gid), index)
+
   def test_3d_contiguous_sequential(self):
     ref  = BufferRef.from_uop(load((2, 3, 4)))
     expr, _ = ref.index_expr("gid")
@@ -646,8 +644,9 @@ class TestSchedulerTaskCount(unittest.TestCase):
     xr  = relu(x)
     out = matmul(xr, w)
     tasks = run_scheduler(out)
-    self.assertEqual(len(tasks), 1)
-    self.assertEqual(tasks[0].kind, TaskKind.BLAS)
+    self.assertEqual([t.kind for t in tasks], [TaskKind.BLAS])
+    self.assertEqual([u.op for u in tasks[0].ops], [Ops.RELU, Ops.MATMUL])
+    self.assertEqual([ref.uop for ref in tasks[0].inputs], [x, w])
 
   def test_copy_own_task(self):
     a   = load((4,))
@@ -780,6 +779,11 @@ class TestSchedulerInputs(unittest.TestCase):
     x, w  = load((4, 8)), load((8, 16))
     tasks = run_scheduler(matmul(x, w))
     self.assertEqual(len(tasks[0].inputs), 2)
+
+  def test_matmul_alias_reuses_physical_input(self):
+    x = load((4, 4))
+    task = run_scheduler(matmul(x, x))[0]
+    self.assertEqual([ref.uop for ref in task.inputs], [x])
 
   def test_inputs_have_correct_strides_for_contiguous(self):
     a, b  = load((3, 4)), load((3, 4))
@@ -924,7 +928,7 @@ class TestRealWorldPatterns(unittest.TestCase):
     self.assertIn(Ops.MUL, elem_ops)  # from neg and/or squaring
 
   def test_two_layer_mlp(self):
-    """h = relu(x @ W1 + b1); y = h @ W2 + b2 — BLAS→ELEM→BLAS→ELEM"""
+    """The hidden activation fuses into the second MATMUL prologue."""
     x  = load((8, 16))
     w1 = load((16, 32))
     b1 = load((32,))
@@ -936,13 +940,13 @@ class TestRealWorldPatterns(unittest.TestCase):
     h2  = matmul(h1r, w2)
     out = add(h2, broadcast(b2, (8, 10)))
     tasks = run_scheduler(out)
-    self.assertEqual(len(tasks), 3)
     kinds = [t.kind for t in tasks]
     self.assertEqual(kinds, [
       TaskKind.BLAS,
       TaskKind.BLAS,
       TaskKind.ELEMENTWISE,
     ])
+    self.assertEqual([u.op for u in tasks[1].ops], [Ops.ADD, Ops.RELU, Ops.MATMUL])
 
   def test_layer_norm(self):
     """
@@ -984,6 +988,19 @@ class TestSchedulerEdgeCases(unittest.TestCase):
     a = load((6,))
     tasks = run_scheduler(reshape(a, (2, 3)))
     self.assertEqual(len(tasks), 0)
+
+  def test_movement_root_materializes_computed_source(self):
+    a = load((6,))
+    computed = relu(a)
+    tasks = run_scheduler(reshape(computed, (2, 3)))
+    self.assertEqual(len(tasks), 1)
+    self.assertIs(tasks[0].output_uop, computed)
+
+  def test_sink_materializes_each_computed_output(self):
+    a, b = load((4,)), load((4,))
+    left, right = relu(a), exp(b)
+    tasks = run_scheduler(UOp(Ops.SINK, F32, (left, right)))
+    self.assertEqual([task.output_uop for task in tasks], [left, right])
 
   def test_multiple_reduces_same_input(self):
     """two reduces over same input — each gets own task"""

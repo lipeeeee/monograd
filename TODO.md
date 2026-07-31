@@ -22,6 +22,8 @@
 - flatten? (zero-copy preferably)
 - graph viz
 - make constructors for uop creation (load, const, etc)
+- look for 0 input kernels, is there a way to ignore them?
+- vector load matmul tiled optim
 
 - NOW
     - test reduce_index_expr_multi

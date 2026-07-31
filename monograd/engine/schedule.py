@@ -77,15 +77,22 @@ class BufferRef:
     # go through the movop chain and compute final stride
     for op in reversed(movement_chain):
       if op.op is Ops.RESHAPE:
+        assert padding_op is None and strides == _row_major_strides(shape), "cannot reshape a non-contiguous view"
         shape = op.shape
         strides = _row_major_strides(shape)
       elif op.op is Ops.EXPAND:
+        assert padding_op is None, "cannot expand a padded view without materializing it"
         new_shape = op.shape
+        if len(shape) < len(new_shape):
+          missing = len(new_shape) - len(shape)
+          shape, strides = (1,) * missing + shape, (0,) * missing + strides
+        assert len(shape) == len(new_shape), f"cannot expand rank {len(shape)} to {len(new_shape)}"
         strides = tuple(
           0 if old == 1 and new > 1 else st
           for old, new, st in zip(shape, new_shape, strides))
         shape = new_shape 
       elif op.op is Ops.PERMUTE:
+        assert padding_op is None, "cannot permute a padded view without materializing it"
         order = op.arg
         shape = op.shape
         strides = tuple(strides[i] for i in order)
@@ -93,11 +100,13 @@ class BufferRef:
         assert padding_op is None, f"monograd only supports 1 padding OP per buffer(if u need more than 1 maybe smth is wrong)"
         padding_op = op
         shape = op.shape
+      elif op.op is Ops.SHRINK:
+        raise NotImplementedError("SHRINK indexing is not implemented")
     ret = BufferRef(cur, shape, strides, padding_op)
     _bufferref_cache[uop] = ret
     return ret
   def index_expr(self, gid: str = "gid") -> tuple[str, str]:
-    if is_scalar(self.uop, self.strides): return "0", "true"
+    if is_scalar(self.uop, self.strides) and not self.is_padded: return "0", "true"
     coords: list[str] = []
     remaining = gid
     for i, dim_size in enumerate(self.shape):
@@ -108,8 +117,8 @@ class BufferRef:
       if below == 1: 
         coords.append(remaining)
       else:
-        coords.append(f"({remaining} / {below})")
-        remaining = f"({remaining} % {below})"
+        coords.append(f"(({remaining}) / {below})")
+        remaining = f"(({remaining}) % {below})"
     if not self.is_padded:
       terms = [f"{c}" if s == 1 else f"({c}) * {s}" for c, s in zip(coords, self.strides) if s != 0]
       return " + ".join(terms) if terms else "0", "true"
@@ -133,7 +142,7 @@ class BufferRef:
     mask_math = " && ".join(conditions) if conditions else "true"
     return index_math, mask_math
   def reduce_index_expr_multi(self, reduce_axes:tuple[int, ...], gid:str="gid", k:str="k") -> tuple[str, str]: # multi-axis reduction
-    if is_scalar(self.uop, self.strides): return "0", "true"
+    if is_scalar(self.uop, self.strides) and not self.is_padded: return "0", "true"
     reduce_axes = tuple(sorted(reduce_axes))
     output_shape = [s for i, s in enumerate(self.shape) if i not in reduce_axes]
     reduce_shape = [self.shape[i] for i in reduce_axes]
@@ -150,8 +159,8 @@ class BufferRef:
         if below == 1: 
           coords.append(remaining)
         else:
-          coords.append(f"({remaining} / {below})")
-          remaining = f"({remaining} % {below})"
+          coords.append(f"(({remaining}) / {below})")
+          remaining = f"(({remaining}) % {below})"
       return coords
     gid_coords = unpack_index(gid, output_shape)
     k_coords = unpack_index(k, reduce_shape)
@@ -219,30 +228,39 @@ def run_scheduler(root: UOp) -> list[KernelTask]:
   _count(root, set())
   scheduled_kernels: list[KernelTask] = []
   scheduled_nodes: set[int] = set()
-  def _schedule(node: UOp):
+  def _schedule(node:UOp, materialize:bool=False):
     if id(node) in scheduled_nodes: return
     if is_invisible(node):
-      for src in node.src: _schedule(src)
+      for src in node.src: _schedule(src, materialize)
       scheduled_nodes.add(id(node))
       return
-    def _pull(n: UOp):
+    def _pull(n:UOp, fuse_views:bool=False):
       if id(n) in scheduled_nodes: return
-      if n.op in GroupOp.Input | GroupOp.Movement:
-        for src in n.src: _pull(src)
+      if n.op in GroupOp.Input: return
+      if n.op in GroupOp.Movement:
+        if fuse_views and consumers[id(n)] <= 1:
+          _pull(n.src[0], fuse_views=True)
+          return
+        base = n
+        while base.op in GroupOp.Movement: base = base.src[0]
+        if base.op not in GroupOp.Input: _schedule(base, materialize=True)
         return
       if is_fusable(n):
         if consumers[id(n)] > 1: 
           _schedule(n) # fanout detected! force to VRAM
         else:
           scheduled_nodes.add(id(n))
-          for src in n.src: _pull(src)
+          for src in n.src: _pull(src, fuse_views)
           group_ops.append(n)
       elif is_boundary(n):
         _schedule(n)
     # force kernel creation if it's a boundary, root, or multi-consumer
-    if is_boundary(node) or node is root or consumers[id(node)] > 1:
+    if is_boundary(node) or node is root or consumers[id(node)] > 1 or materialize:
       group_ops: list[UOp] = []
-      for src in node.src: _pull(src)
+      if node.op in GroupOp.BLAS:
+        for src in node.src: _pull(src, fuse_views=True)
+      else:
+        for src in node.src: _pull(src)
       group_ops.append(node)
       scheduled_nodes.add(id(node))
       if node.op in GroupOp.BLAS: kind = TaskKind.BLAS
@@ -251,7 +269,7 @@ def run_scheduler(root: UOp) -> list[KernelTask]:
       elif node.op in {Ops.COPY, Ops.CONTIGUOUS}: kind = TaskKind.COPY
       else: kind = TaskKind.ELEMENTWISE
       scheduled_kernels.append(KernelTask(kind, group_ops, _collect_inputs(group_ops)))
-  _schedule(root)
+  _schedule(root, materialize=True)
   return scheduled_kernels
 def _collect_inputs(ops:list[UOp]) -> list[BufferRef]:
   # given *ops*, will return leaf/input nodes as buffer refs
