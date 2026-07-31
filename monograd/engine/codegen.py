@@ -134,6 +134,7 @@ def codegen(task:KernelTask) -> CompiledKernel:
     if any(primary_strides[a] == 1 for a in reduce_axes): return _codegen_reduce_strided_inner(task, _local_size_tmp)
     else: return _codegen_reduce_strided_outer(task)
   if task.kind is TaskKind.COPY: return _codegen_copy(task)
+  if task.kind is TaskKind.BLAS: return _codegen_blas(task)
   raise RuntimeError(f"how come i didnt get treated? {task};kind={task.kind}")
 def _codegen_elementwise(task:KernelTask) -> CompiledKernel:
   n:int = prod(task.output_shape)
@@ -233,6 +234,8 @@ def _codegen_blas(task: KernelTask,
                   TSK: int = 16, 
                   WPTM: int = 8, 
                   WPTN: int = 8) -> CompiledKernel:
+  assert TSM % WPTM == 0, f"TSM ({TSM}) must be a multiple of WPTM ({WPTM})"
+  assert TSN % WPTN == 0, f"TSN ({TSN}) must be a multiple of WPTN ({WPTN})"
   A_ref, B_ref = task.inputs[0], task.inputs[1]
   M, K = A_ref.shape[-2], A_ref.shape[-1]
   _, N = B_ref.shape[-2], B_ref.shape[-1]
@@ -246,6 +249,7 @@ def _codegen_blas(task: KernelTask,
   RTSM, RTSN = TSM // WPTM, TSN // WPTN
   assert (TSK * TSM) % (RTSM * RTSN) == 0, "A-tile fetch loop not perfectly divisible by thread count"
   assert (TSK * TSN) % (RTSM * RTSN) == 0, "B-tile fetch loop not perfectly divisible by thread count"
+  assert (RTSM * RTSN) <= 1024, f"Workgroup size {RTSM * RTSN} exceeds OpenCL 1024 hardware limit"
   LPTA = (TSK * TSM) // (RTSM * RTSN)
   LPTB = (TSK * TSN) // (RTSM * RTSN)
 

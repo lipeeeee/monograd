@@ -10,11 +10,11 @@ from monograd.uop.ops import UOp
 import numpy as np
 
 class Tensor(OpMixin):
-  def __init__(self, data: ConstType|UOp|list|tuple|np.ndarray|None, requires_grad:bool = True,
+  def __init__(self, data:ConstType|UOp|list|tuple|np.ndarray|None, requires_grad:bool = True,
                device:DeviceLike = Device.CPU, dtype:DTypeLike|None = None, name:str|None = None):
     if dtype is None and isinstance(data, np.ndarray): _dtype = from_np_dtype(data.dtype)
     else: _dtype = to_dtype(dtype) if dtype is not None else dtypes.default_float
-    _device = to_device(device) if device is not Device.CPU else device
+    _device = to_device(device)
     del dtype, device
     self.grad:Tensor|None = None
     self.requires_grad:bool = requires_grad
@@ -110,10 +110,11 @@ class Tensor(OpMixin):
   def cast_upwards(self, *tensors:Tensor) -> tuple[Tensor, ...]|Tensor:
     target = most_upper_dtype(*[t.dtype for t in tensors])
     return tuple(t.cast(target) for t in tensors) if isinstance(tensors, tuple) else tensors.cast(target)
-  def to(self, device:DeviceLike) -> Tensor: # NOTE does this handle changing the device of grad???     !!!
+  def to(self, device:DeviceLike) -> Tensor:
     if (device:=to_device(device)) == self.device: return self
     copy_device_uop = UOp(Ops.COPY, self.dtype, (self.uop,), device)
     ret = Tensor(copy_device_uop, self.requires_grad, dtype=self.dtype)
+    # TODO: How to pass grad into this new device without changing original value
     return ret
 
   @property
@@ -208,6 +209,12 @@ if __name__ == "__main__":
   a = Tensor([[1.0, 1.0], [2.0, 2.0]], device="gpu", dtype=dtypes.float32).pad(((1, 1), (1, 1)), value=1.0)
   b = a * 3
   d = rewrite_graph(b.uop)
+
+  a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+  b = Tensor([[1.0, 2.0], [3.0, 4.0]])
+  c = a * 4
+  d = c @ b
+  d = rewrite_graph(d.uop)
 
   print("=== UOP GRAPH ===")
   pprint_graph(d)

@@ -21,6 +21,7 @@
 - opencl kernel profiling/benchmarking into saving optimal params
 - flatten? (zero-copy preferably)
 - graph viz
+- make constructors for uop creation (load, const, etc)
 
 - NOW
     - test reduce_index_expr_multi
